@@ -1,0 +1,4 @@
+interface:
+  display_name: "SEO Knowledge Material Preparer"
+  short_description: "Screen and sanitize raw materials for SEO knowledge use"
+  default_prompt: "Use $prepare-seo-knowledge-materials to triage these provided materials, create the knowledge preparation package, and stop before cleaning any B item."
