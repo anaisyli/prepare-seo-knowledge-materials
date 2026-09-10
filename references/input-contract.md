@@ -18,7 +18,7 @@ scope_confirmation:
   confirmation_source: "current_request"
 ```
 
-An explicit instruction to process a specific path, file set, record range, or connector query for this knowledge-base triage is sufficient to set `confirmed: true`. The caller does not need to use the word "confirm" or identify a confirmer. If no such scoped instruction exists, stop before content extraction and classification and ask the caller to state what this run may process. Do not infer confirmation from file delivery, folder access, silence, or an unscoped general request. The gate records process scope only; it does not decide whether authorization is legally valid.
+Require both an explicit confirmation that the supplied material may be used for this knowledge-base triage and a declared scope such as a path, supplied file set, record range, or connector query. Natural language is sufficient; the caller does not need to write YAML, provide a date, or identify a confirmer. A request that only says to triage a path is not confirmation. If confirmation or scope is missing, stop before content extraction and classification and ask the caller to confirm the scope. Do not infer confirmation from file delivery, folder access, silence, or an unconfirmed processing request. The gate records process scope only; it does not decide whether authorization is legally valid.
 
 `confirmation_source` records where the explicit scope statement came from, not who is legally authorized. Use a value such as `current_request` or an opaque upstream confirmation-record ID. Do not invent a person's identity or role. `confirmed_at` is recorded by the run when the confirmation is received; the caller does not need to type YAML or a date.
 
@@ -94,6 +94,7 @@ Use a real parser for JSON, JSONL, YAML, CSV, TSV, or XML. Do not use regular ex
 ## Working data
 
 - Prefer streaming or temporary extraction over durable full-text caches.
+- Treat PDF OCR text as temporary working extraction and retain only sanitized extraction metadata, decisions, and page locators in final outputs.
 - Keep working extraction outside the formal output folders.
 - Final reports must contain risk types and locations, not the sensitive original values.
 - Do not copy D/E raw material into the final output by default.

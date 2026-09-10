@@ -56,11 +56,11 @@ Do not rewrite R3 material into a retained document. Record an exclusion reason 
 
 ### R4 - Uncertain
 
-Use R4 when content, declared processing scope, evidence status, deletion boundaries, or readability cannot be judged reliably. Examples include corrupt files, severe encoding problems, image-only core text when OCR is out of scope, ambiguous structured fields, and statements whose general applicability cannot be established.
+Use R4 when content, declared processing scope, evidence status, deletion boundaries, or readability cannot be judged reliably. Examples include corrupt files, severe encoding problems, PDF pages that remain unreliable after OCR, standalone image-only content, ambiguous structured fields, and statements whose general applicability cannot be established.
 
 Authorization validity is an upstream responsibility and is not evaluated by this classification policy. This policy only checks whether the declared processing scope is present and clear.
 
-Do not use R4 merely because a file contains many images when the readable text is sufficient.
+Do not use R4 merely because a file contains many images when the readable text is sufficient. OCR-derived PDF text may support classification only when page coverage, recognition quality, and reading order are reliable enough for the decision; otherwise use R4 rather than guessing.
 
 ## A-E item decisions
 

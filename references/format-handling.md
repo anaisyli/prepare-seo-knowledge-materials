@@ -18,11 +18,16 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 
 ## PDF
 
-- Use extracted text with page locators. Ignore images unless the readable text is insufficient.
+- Try the embedded text layer first and preserve page locators.
+- Use OCR when the embedded text is absent, garbled, or materially incomplete. Prefer OCR only on affected pages rather than the full PDF.
+- OCR recognizes text for classification; it does not authorize describing photographs, interpreting diagrams, or inferring facts from visual appearance.
+- Keep OCR output as temporary working data. Do not place a full OCR transcript in formal knowledge, review lists, filenames, or logs.
+- Record `text_extraction: ocr` or `mixed`, the OCR page numbers, language setting, engine/version when available, and whether recognition and reading order were verified. If confidence values are available, retain them in restricted processing metadata.
+- OCR-derived text can support A-E classification only when all relevant pages have adequate coverage and the recognized text and reading order are reliable. If important text, tables, labels, or page boundaries remain uncertain, use R4/D.
 - V0.1 may remove complete pages from a work copy.
 - Do not attempt precise in-page text deletion, raster redaction, or layout reconstruction unless a tool can verify that the underlying content is actually removed.
 - Visual covering is not deletion. If text remains extractable under a rectangle, the result fails.
-- Image-only core content is D when OCR is not explicitly authorized.
+- After B page removal, verify both the remaining text layer and any OCR-readable page content. OCR used for triage does not itself modify or sanitize the PDF.
 
 ## PPT and PPTX
 
