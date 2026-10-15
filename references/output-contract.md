@@ -13,7 +13,8 @@ SEO-Knowledge-Triage/<run-id>/
 |   |   `-- 04_处理记录/
 |   `-- package-manifest.json
 |-- review-assets/
-|   `-- 02_B待清理源文件/
+|   |-- 02_B待清理源文件/
+|   `-- 03_D待定源文件/
 |-- review-only/
 |   |-- 01_待删除/
 |   |-- 02_待定/
@@ -21,11 +22,12 @@ SEO-Knowledge-Triage/<run-id>/
 |-- inventory.json
 |-- triage-results.jsonl
 |-- B类待处理清单.md
+|-- 待定文件清单.md
 |-- 初筛清单.md
 `-- 文件处理报告.md
 ```
 
-`knowledge-assets/` is the formal knowledge package for later knowledge-base import. It contains copied A source files, formal C knowledge points, and sanitized processing records. B copies belong only in the separate `review-assets/02_B待清理源文件/` area and are explicitly pending cleanup; they must not be imported before deletion and verification. The root-level `B类待处理清单.md` is the human-readable entry point for B cleanup; the machine-readable deletion records remain in `review-only/01_待删除/deletion-review.jsonl`. The package must not contain D/E source files, image files, or prohibited content.
+`knowledge-assets/` is the formal knowledge package for later knowledge-base import. It contains copied A source files, formal C knowledge points, and sanitized processing records. B copies belong only in `review-assets/02_B待清理源文件/` and are explicitly pending cleanup; D copies belong only in `review-assets/03_D待定源文件/` and are explicitly pending review. Neither may be imported before the required follow-up decision and verification. The root-level `B类待处理清单.md` and `待定文件清单.md` are the human-readable entry points for B and D review; machine-readable records remain in `review-only/01_待删除/deletion-review.jsonl` and `review-only/02_待定/pending-items.jsonl`. Do not copy E source files or standalone images into the package by default. Prohibited content must never enter `knowledge-assets/`; unchanged B/D review copies may contain prohibited or uncertain content and must be treated as restricted, non-importable material. Never import the whole output package indiscriminately.
 
 The `review-only/` lists contain decisions and locations only. Do not include persistent full-text extractions or prohibited values. The human-readable list should name risk categories and locations, not quote sensitive content.
 
@@ -91,6 +93,44 @@ Each item must state its item-level triage decision, concise non-sensitive reaso
 
 Do not put customer names, contact details, prices, quantities, competitor names, case narratives, or other prohibited values in this list.
 
+`待定文件清单.md` is the first human-facing view for every D item. It must be written at the package root and include one entry per D source with:
+
+- safe source label and `item_id`;
+- link to the verified isolated copy under `review-assets/03_D待定源文件/`, or an explicit copy failure if unavailable;
+- source hash;
+- decision `D` and the precise uncertainty or processing failure;
+- locator or affected page/section when known;
+- the specific information needed to re-evaluate the item;
+- a clear statement that the copy is not importable until the uncertainty is resolved and the result is re-verified.
+
+Do not put sensitive source values, customer names, contact details, prices, quantities, competitor names, or case narratives in this list.
+
+Always create `待定文件清单.md`; write “无待定文件” when there are no D items. Use safe, collision-free copy names such as `<item_id>.pdf`, preserving the extension without leaking sensitive original filenames. Copy available local D sources byte-for-byte and compare their SHA-256 with the inventory hash. If the source changed, copying failed, or verification failed, record that status without presenting a copy as verified. D copies do not authorize raw connector/inline persistence or attachment retrieval beyond the input contract.
+
+`review-only/02_待定/pending-items.jsonl` contains one sanitized record per D item, including those without a copy. For example:
+
+```json
+{
+  "item_id": "local-kl12mn34-4",
+  "decision": "D",
+  "asset_type": "source_file_pending_review",
+  "source_hash": "sha256-hex",
+  "output_path": "review-assets/03_D待定源文件/local-kl12mn34-4.pdf",
+  "output_hash": "sha256-hex",
+  "locators": ["page 3"],
+  "reason_codes": ["unreliable_ocr"],
+  "required_follow_up": "Provide a readable replacement for page 3.",
+  "execution_status": "pending_review",
+  "copy_status": "copied",
+  "verification_status": "hash_verified",
+  "review_status": "pending",
+  "importable": false,
+  "usable_as_fact": false
+}
+```
+
+Record paths relative to the package root in pending records. If copying fails or raw persistence is not permitted, use an appropriate `copy_status` such as `copy_failed` or `not_persisted`, record a safe failure reason, and omit nonexistent output paths/hashes. If source hashing is unavailable, record that fact rather than inventing a hash. Never mark an unverified copy importable or usable as a fact.
+
 `初筛清单.md` must include:
 
 - run ID and source scope;
@@ -102,7 +142,7 @@ Do not put customer names, contact details, prices, quantities, competitor names
 - exclusion reason for E;
 - a clear statement that no source file has been modified and B deletions have not occurred.
 
-The triage stage may copy A source files, copy B source files into the separate review-assets area, and create C knowledge points directly from eligible company-owned R1 content. It must stop before editing B files.
+The triage stage may copy A source files, copy B and available local D source files into their separate review-assets areas, and create C knowledge points directly from eligible company-owned R1 content. It must stop before editing B files or changing the classification of D files.
 
 ## Preparation package manifest
 
@@ -136,6 +176,20 @@ The triage stage may copy A source files, copy B source files into the separate 
     },
     {
       "asset_id": "asset-0003",
+      "item_id": "local-kl12mn34-4",
+      "asset_type": "source_file_pending_review",
+      "decision": "D",
+      "path": "../review-assets/03_D待定源文件/local-kl12mn34-4.pdf",
+      "source_hash": "sha256-hex",
+      "output_hash": "sha256-hex",
+      "verification_status": "hash_verified",
+      "review_status": "pending",
+      "importable": false,
+      "usable_as_fact": false,
+      "pending_review_path": "../review-only/02_待定/pending-items.jsonl"
+    },
+    {
+      "asset_id": "asset-0004",
       "item_id": "local-ij90kl12-3",
       "asset_type": "knowledge_point",
       "decision": "C",
@@ -147,7 +201,7 @@ The triage stage may copy A source files, copy B source files into the separate 
 }
 ```
 
-`importable` means eligible for the next knowledge-base import step, not that this skill writes to the production system. B source copies remain `importable: false` until cleaned and verified.
+`importable` means eligible for the next knowledge-base import step, not that this skill writes to the production system. B source copies remain `importable: false` until cleaned and verified. D source copies remain `importable: false` until their uncertainty is resolved, the item is re-evaluated, and the resulting asset is verified.
 
 ## Processing records
 
@@ -171,7 +225,7 @@ Example processing record:
 }
 ```
 
-For B, use `asset_type: source_file_pending_cleanup`, `execution_status: pending_deletion_review`, and `importable: false`. For C, use `asset_type: knowledge_point`, `execution_status: extracted`, and `importable: true`.
+For B, use `asset_type: source_file_pending_cleanup`, `execution_status: pending_deletion_review`, and `importable: false`. For C, use `asset_type: knowledge_point`, `execution_status: extracted`, and `importable: true`. D records belong in `review-only/02_待定/pending-items.jsonl`, not in formal processing records; their copies are indexed as non-importable in the package manifest only when actually produced.
 
 ## Optional B cleanup approval
 
@@ -204,7 +258,7 @@ execution-manifest.json
 
 After verification, cleaned B files replace their pending-cleanup status in the manifest and become importable. The original B source remains outside the formal knowledge package unless the user explicitly requests a protected archive.
 
-Do not copy raw D/E files or images by default. Their directories contain records only. If the user explicitly requests a protected raw archive, keep it outside `knowledge-assets/formal-knowledge/` and mark every file non-importable.
+Do not copy raw E files or images by default. Available local D source copies belong only in `review-assets/03_D待定源文件/`, marked pending and non-importable. If the user explicitly requests a protected E or image archive, keep it outside `knowledge-assets/formal-knowledge/` and mark every file non-importable.
 
 ## Formal knowledge-point object
 

@@ -94,7 +94,7 @@ The original item cannot be retained, but at least one company-owned R1 unit can
 
 ### D - Cannot process reliably
 
-Use D for R4 conditions. Do not edit or duplicate the raw source by default. Record the reason and the action needed for a future review.
+Use D for R4 conditions. Copy an available local source byte-for-byte into `review-assets/03_D待定源文件/`, without editing the original. Mark it `review_status: pending`, `importable: false`, and `usable_as_fact: false`. Record the uncertainty and required follow-up in the root-level `待定文件清单.md` and `review-only/02_待定/pending-items.jsonl`. If copying fails, record the failure instead of claiming a copy exists. Do not persist raw connector or inline content merely because it is D; the input contract's persistence limits still apply. Standalone images remain excluded and are not copied.
 
 ### E - Excluded
 

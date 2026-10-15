@@ -97,4 +97,5 @@ Use a real parser for JSON, JSONL, YAML, CSV, TSV, or XML. Do not use regular ex
 - Treat PDF OCR text as temporary working extraction and retain only sanitized extraction metadata, decisions, and page locators in final outputs.
 - Keep working extraction outside the formal output folders.
 - Final reports must contain risk types and locations, not the sensitive original values.
-- Do not copy D/E raw material into the final output by default.
+- Copy available D local source files only to the isolated `review-assets/03_D待定源文件/` area, never into formal knowledge. Verify the copy hash and record any copy failure. This does not authorize persisting raw connector or inline content; keep the adapter's persistence limits above.
+- Do not copy E raw material or standalone images into the output by default.
