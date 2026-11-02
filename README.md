@@ -5,7 +5,7 @@
 它做四件事：
 
 1. 盘点全部资料，并把附件关联到所属邮件；
-2. 打开每一份文件，判断它是什么、怎么处理、能怎么用；
+2. 打开每一份文件看内容，完成分类并提取知识点；
 3. 用脚本把文件真实搬进对应文件夹，逐个校验；
 4. 校验通过才算完成，不会出现“清单上有，包里没有”。
 
@@ -87,11 +87,13 @@
 ## 三、调用方式
 
 ```text
-使用 $prepare-seo-knowledge-materials 初筛 D:\ClientMaterials 中的资料。
+使用 $prepare-seo-knowledge-materials 初筛 D:\SEO-Runs\<项目名>\原始资料。
 我确认，这批资料可以用于本次知识库初筛，范围仅限本次提供的资料。
-整理包输出到 D:\SEO-Runs\<run-id>\02_初筛包，工作文件放在 D:\SEO-Runs\<run-id>\_working。
+整理包输出到 D:\SEO-Runs\<项目名>\02_初筛包，工作文件放在 D:\SEO-Runs\<项目名>\_working。
 不要修改源文件。
 ```
+
+收集到的资料都复制进 `原始资料` 文件夹就行，不用改名，也不用分类。
 
 “我确认……范围仅限……”这句不能省，缺了会在读取正文前停止。操作者不需要自报身份，也不需要手写 YAML 或日期。
 
@@ -103,7 +105,7 @@ Skill 按这个顺序执行，都用自带脚本，不临时写脚本：
 
 ```powershell
 # 1. 盘点，并把附件关联到邮件
-python scripts/inventory_materials.py D:\Run\01_邮箱取料 D:\Run\01_本地资料 `
+python scripts/inventory_materials.py D:\Run\原始资料 `
   --output D:\Run\_working\inventory.json `
   --mail-manifest D:\Run\mail-manifest.json
 
@@ -111,7 +113,8 @@ python scripts/inventory_materials.py D:\Run\01_邮箱取料 D:\Run\01_本地资
 python scripts/extract_text.py D:\Run\_working\inventory.json --work D:\Run\_working
 
 # 3. 有邮件时，挑出所有可能有用的句子，能力陈述句逐句读完
-python scripts/mail_candidates.py D:\Run\_working\inventory.json --work D:\Run\_working
+python scripts/mail_candidates.py D:\Run\_working\inventory.json --work D:\Run\_working `
+  --sent-marker 发 --own-domain example.com
 
 # 4. Skill 判断后写出 triage-results.json 和 knowledge-points.jsonl
 
@@ -128,6 +131,8 @@ python scripts/verify_package.py D:\Run\02_初筛包 `
 ```
 
 只想先扫一遍做 Obsidian 目录时，第 1 步加 `--catalog <目录.md>` 即可。这一步只看文件名和大小，不读内容。
+
+`--sent-marker` 和 `--own-domain` 用来只看公司自己写的内容：前者是已发送邮件标题的结尾标记，后者是公司邮箱域名，可以写多个。两个都不传时，会查看全部邮件内容。
 
 ### 常用选项
 
@@ -186,9 +191,9 @@ python scripts/verify_package.py D:\Run\02_初筛包 `
 ## 八、格式说明
 
 - **Excel：**检查隐藏工作表、批注和元数据，记录内嵌图片数量。`.xls` 通过 LibreOffice 转换后读取，打不开就归 D。
-- **PDF：**先读文字层（需要 `pypdf`），没有文字的页面列入 OCR。目录册和公司简介常是纯图片，留在 D 之前要先尝试 OCR。
+- **PDF：**先读文字层（需要 `pypdf`）。目录册和公司简介常是纯图片，AI 能看图时逐页查看，看不了再用 OCR，都不行才留在 D。
 - **Word/PPT：**保留段落、幻灯片定位，检查备注、批注和文档属性。
-- **图片：**可查看的尽量查看。图片上的文字默认算单次来源，不从产品外观推断规格。
+- **图片：**可查看的尽量查看。从图片提取的知识点也要写适用范围，不从产品外观推断规格。
 - **音视频、压缩包：**只登记并复制，归 D。
 
 如果无法证明禁止内容已从可见文本、底层文本、备注、隐藏结构和元数据中移除，清理结果不能标记为可导入。
