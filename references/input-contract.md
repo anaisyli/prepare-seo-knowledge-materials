@@ -97,5 +97,14 @@ Use a real parser for JSON, JSONL, YAML, CSV, TSV, or XML. Do not use regular ex
 - Treat PDF OCR text as temporary working extraction and retain only sanitized extraction metadata, decisions, and page locators in final outputs.
 - Keep working extraction outside the formal output folders.
 - Final reports must contain risk types and locations, not the sensitive original values.
-- Copy available D local source files only to the isolated `review-assets/03_D待定源文件/` area, never into formal knowledge. Verify the copy hash and record any copy failure. This does not authorize persisting raw connector or inline content; keep the adapter's persistence limits above.
-- Do not copy E raw material or standalone images into the output by default.
+- Local source files reach the package only through `scripts/build_package.py`. This does not authorize persisting raw connector or inline content; keep the adapter's persistence limits above.
+
+## Mail exports and attachments
+
+- Retrieval stays upstream, so this skill does not fetch attachments. It must still notice when they are missing.
+- Pass the mail search `--json` output to `inventory_materials.py --mail-manifest`. Each saved attachment then carries the `parent_id` of its email, and any attachment that was not saved is listed under `missing_attachments`.
+- Keep that manifest outside the materials directory so it is not inventoried as a source.
+- An export that left its attachments behind is listed under `attachment_export_gaps`. `verify_package.py` fails on either list until the user accepts the gap.
+- Inventory marks each email `is_mail: true`, which is what `mail_candidates.py` and the email rules in `verify_package.py` act on.
+- Emails that no manifest covers are listed under `attachment_unverified`, whichever tool exported them, because nothing shows their attachments arrived. `verify_package.py` fails on this list too until the user accepts it.
+- Files found on a client's computer carry no `parent_id`. That is normal; do not guess which email they came from.

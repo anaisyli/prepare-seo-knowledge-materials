@@ -4,9 +4,18 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 
 ## Images
 
-- Treat standalone image files and image-only attachments as `image_no_process`.
-- Inventory them for counting and exclusion reporting, but do not OCR, describe, classify, copy, or extract knowledge from them.
-- Keep only a sanitized record in `review-only/03_排除/`; never place image files in `knowledge-assets/formal-knowledge/`.
+- Images are materials. The build script copies every image into the package.
+- An image nobody has looked at is D with `content_read: false`.
+- Look at images when you can. A product or catalog image is A or D by what it shows; a signature, logo, or screenshot of a chat is E noise.
+- A knowledge point read from an image states its `scope` like any other. Do not infer specifications or capabilities from how a product looks.
+
+## Video and audio
+
+- Record them as D. They are not transcribed during triage; state in `required_follow_up` that transcription is pending.
+
+## Archives
+
+- Do not unpack archives during triage. Record them as D and list their member names when the format allows.
 
 ## DOC and DOCX
 
@@ -18,8 +27,8 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 
 ## PDF
 
-- Try the embedded text layer first and preserve page locators.
-- Use OCR when the embedded text is absent, garbled, or materially incomplete. Prefer OCR only on affected pages rather than the full PDF.
+- Try the embedded text layer first and preserve page locators. `extract_text.py` uses `pypdf` when installed and lists pages without text in `ocr_pages`.
+- Use OCR when the embedded text is absent, garbled, or materially incomplete. Prefer OCR only on affected pages rather than the full PDF. Catalogs and company profiles are often image-only, so run OCR before leaving them in D; if no OCR engine is available, say so in `required_follow_up`.
 - OCR recognizes text for classification; it does not authorize describing photographs, interpreting diagrams, or inferring facts from visual appearance.
 - Keep OCR output as temporary working data. Do not place a full OCR transcript in formal knowledge, review lists, filenames, or logs.
 - Record `text_extraction: ocr` or `mixed`, the OCR page numbers, language setting, engine/version when available, and whether recognition and reading order were verified. If confidence values are available, retain them in restricted processing metadata.
@@ -42,7 +51,9 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 - Use sheet and cell/range locators such as `Pricing!B4:F19`.
 - For B, modify only exact sheets, rows, columns, or ranges when the change can be verified without corrupting formulas or workbook behavior.
 - Do not assume hidden content is irrelevant or safe.
-- Treat legacy XLS as read/convert only when a reliable converter is available.
+- Quotation sheets are product material with prices attached. Follow the B rules in the classification policy and keep their embedded images.
+- `extract_text.py` reports `embedded_media`. Note the count in the summary, because the images are often the only product photos.
+- `extract_text.py` converts legacy XLS through LibreOffice. When it reports `unsupported` or `failed`, classify the item D; do not exclude it on its filename.
 
 ## TXT and Markdown
 

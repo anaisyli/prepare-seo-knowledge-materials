@@ -1,43 +1,50 @@
 # Output Contract
 
-## Triage mode
+## Package layout
 
-Create a knowledge-base preparation package without editing source files:
+`scripts/build_package.py` creates this layout. Do not create or edit it by hand.
 
 ```text
-SEO-Knowledge-Triage/<run-id>/
-|-- knowledge-assets/
-|   |-- formal-knowledge/
-|   |   |-- 01_原始保留/
-|   |   |-- 03_提取知识/
-|   |   `-- 04_处理记录/
-|   `-- package-manifest.json
-|-- review-assets/
-|   |-- 02_B待清理源文件/
-|   `-- 03_D待定源文件/
-|-- review-only/
-|   |-- 01_待删除/
-|   |-- 02_待定/
-|   `-- 03_排除/
-|-- inventory.json
-|-- triage-results.jsonl
-|-- B类待处理清单.md
-|-- 待定文件清单.md
-|-- 初筛清单.md
-`-- 文件处理报告.md
+<package>/
+|-- 00_总清单.md
+|-- 客户确认表.xlsx
+|-- A-原文保留/
+|   |-- A-清单.md
+|   `-- <标签>/
+|-- B-待清理/
+|   `-- B-清单.md
+|-- C-知识点/
+|   |-- C-清单.md
+|   |-- knowledge-points.jsonl
+|   |-- 来源文件清单.md
+|   `-- 来源文件/
+|-- D-待定/
+|   `-- D-清单.md
+|-- E-排除/
+|   |-- E-清单.md
+|   |-- E-完整清单.csv
+|   `-- <标签>/
+`-- 审计记录/
+    |-- package-manifest.json
+    |-- inventory.json
+    |-- triage-results.json
+    `-- 校验结果.json
 ```
 
-`knowledge-assets/` is the formal knowledge package for later knowledge-base import. It contains copied A source files, formal C knowledge points, and sanitized processing records. B copies belong only in `review-assets/02_B待清理源文件/` and are explicitly pending cleanup; D copies belong only in `review-assets/03_D待定源文件/` and are explicitly pending review. Neither may be imported before the required follow-up decision and verification. The root-level `B类待处理清单.md` and `待定文件清单.md` are the human-readable entry points for B and D review; machine-readable records remain in `review-only/01_待删除/deletion-review.jsonl` and `review-only/02_待定/pending-items.jsonl`. Do not copy E source files or standalone images into the package by default. Prohibited content must never enter `knowledge-assets/`; unchanged B/D review copies may contain prohibited or uncertain content and must be treated as restricted, non-importable material. Never import the whole output package indiscriminately.
+- `<标签>` is the fixed Chinese label of the `resource_type`. Competitor material sits in `A-原文保留/竞对资料/`.
+- Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer.
+- `客户确认表.xlsx` is the only file for the client. One sheet holds everything awaiting a decision, with a dropdown of 保留 / 不用 / 需要修改. The other lists what was recorded but not taken. Its hidden 编号 column links each row back to its item.
+- The package is internal and restricted; never forward it whole. Only assets marked `importable: true` go to the next step, and `审计记录/` holds absolute source paths.
 
-The `review-only/` lists contain decisions and locations only. Do not include persistent full-text extractions or prohibited values. The human-readable list should name risk categories and locations, not quote sensitive content.
+## Inputs to the build
 
-## Inventory
+### Inventory
 
-`inventory.json` records every supplied item, including unsupported files. For local files include SHA-256, byte size, media type, source reference, and supported-extension status. For connectors use an opaque source reference and stable version/etag/hash when available.
+`inventory.json` records every supplied item, including unsupported files. For local files include SHA-256, byte size, media type, `asset_kind`, source reference, and `parent_id` for linked attachments. For connectors use an opaque source reference and stable version/etag/hash when available.
 
-## Triage result
+### Triage result
 
-Use this logical structure. Additional format-specific locator fields are allowed.
+Write `triage-results.json`. One object per inventory item; no item may be left out.
 
 ```json
 {
@@ -56,18 +63,21 @@ Use this logical structure. Additional format-specific locator fields are allowe
     {
       "item_id": "local-ab12cd34-1",
       "source_kind": "local_file",
-      "source_ref": "D:/input/example.docx",
+      "source_ref": "D:/input/quotation.xlsx",
       "source_hash": "sha256-hex",
       "decision": "B",
+      "resource_type": "product",
+      "business_tags": ["website", "seo_geo"],
+      "content_read": true,
       "content_codes": ["R0", "R2"],
-      "reason_codes": ["customer_identity", "transaction_detail"],
-      "summary": "Useful general product material with localized prohibited content.",
+      "reason_codes": ["price_columns", "customer_block"],
+      "summary": "Product and fabric table with prices and a customer block.",
       "actions": [
         {
           "action_id": "action-0001",
           "type": "copy_then_remove",
-          "locators": ["Customer Projects > paragraph 2"],
-          "reason_codes": ["customer_case"],
+          "locators": ["Sheet1!A1:F8", "Sheet1!E:E"],
+          "reason_codes": ["price_columns"],
           "execution_supported": true
         }
       ]
@@ -76,160 +86,85 @@ Use this logical structure. Additional format-specific locator fields are allowe
 }
 ```
 
-Each item must state its item-level triage decision, concise non-sensitive reasoning, proposed action, and exact or broad locators where applicable. `content_codes` records the R0-R4 codes found at the content-unit layer; `decision` records the A-E triage result for the complete item. For PDFs, add sanitized extraction metadata when OCR was used: `text_extraction` (`native`, `ocr`, or `mixed`), `ocr_pages`, and `ocr_verification`; include engine/version and language only when available. Do not persist the OCR transcript. `approval_status: pending` refers only to optional B cleanup, not to A copying or C extraction. A completed triage package may still contain B items awaiting cleanup approval. C items include the formal knowledge point and its source locator in triage output; they do not require a second approval cycle. B items include proposed deletion actions and locators, but none is executed in triage mode. D items state the failure and needed review. E items state exclusion reason codes. Competitor and customer-case content must not have extraction actions.
+Required on every item: `item_id`, `decision`, `resource_type`, `content_read`, `summary`.
 
-## Human review list
-
-`B类待处理清单.md` is the first human-facing view for every B item. It must be written at the package root and include one entry per B source with:
-
-- safe source label and `item_id`;
-- path of the isolated copy under `review-assets/02_B待清理源文件/`;
-- source hash;
-- decision `B` and a short reason code;
-- exact page, slide, paragraph, heading, sheet/range, row, or JSON-path locations to remove;
-- the type of prohibited content at each location, without quoting its value;
-- whether the proposed boundary is technically executable in a later cleanup step;
-- a clear statement that the copy is not importable until cleaned and verified.
-
-Do not put customer names, contact details, prices, quantities, competitor names, case narratives, or other prohibited values in this list.
-
-`待定文件清单.md` is the first human-facing view for every D item. It must be written at the package root and include one entry per D source with:
-
-- safe source label and `item_id`;
-- link to the verified isolated copy under `review-assets/03_D待定源文件/`, or an explicit copy failure if unavailable;
-- source hash;
-- decision `D` and the precise uncertainty or processing failure;
-- locator or affected page/section when known;
-- the specific information needed to re-evaluate the item;
-- a clear statement that the copy is not importable until the uncertainty is resolved and the result is re-verified.
-
-Do not put sensitive source values, customer names, contact details, prices, quantities, competitor names, or case narratives in this list.
-
-Always create `待定文件清单.md`; write “无待定文件” when there are no D items. Use safe, collision-free copy names such as `<item_id>.pdf`, preserving the extension without leaking sensitive original filenames. Copy available local D sources byte-for-byte and compare their SHA-256 with the inventory hash. If the source changed, copying failed, or verification failed, record that status without presenting a copy as verified. D copies do not authorize raw connector/inline persistence or attachment retrieval beyond the input contract.
-
-`review-only/02_待定/pending-items.jsonl` contains one sanitized record per D item, including those without a copy. For example:
+- `content_read: true` means the content was actually opened. A, B, C, and E items need it; `verify_package.py` rejects them otherwise, and also rejects them when `extract_text.py` could not read the file.
+- E items need a specific `reason_codes` value. A bare `E` is rejected.
+- Excluded emails need `mail_review`: `full` if read in full, or `candidates` if every statement sentence from `mail_candidates.py` was read.
+- D items state the failure in `summary` and the need in `required_follow_up`.
+- Set `restricted: true` on items holding finance, contract, or account data that are not typed `finance`.
+- `approval_status: pending` refers only to optional B cleanup.
+- Items awaiting the client add `pending_client_review: true` and `client_review_items`. When only part of the file waits, also add `pending_scope: "part"`; every entry then needs a `location`:
 
 ```json
 {
-  "item_id": "local-kl12mn34-4",
-  "decision": "D",
-  "asset_type": "source_file_pending_review",
-  "source_hash": "sha256-hex",
-  "output_path": "review-assets/03_D待定源文件/local-kl12mn34-4.pdf",
-  "output_hash": "sha256-hex",
-  "locators": ["page 3"],
-  "reason_codes": ["unreliable_ocr"],
-  "required_follow_up": "Provide a readable replacement for page 3.",
-  "execution_status": "pending_review",
-  "copy_status": "copied",
-  "verification_status": "hash_verified",
-  "review_status": "pending",
-  "importable": false,
-  "usable_as_fact": false
-}
-```
-
-Record paths relative to the package root in pending records. If copying fails or raw persistence is not permitted, use an appropriate `copy_status` such as `copy_failed` or `not_persisted`, record a safe failure reason, and omit nonexistent output paths/hashes. If source hashing is unavailable, record that fact rather than inventing a hash. Never mark an unverified copy importable or usable as a fact.
-
-`初筛清单.md` must include:
-
-- run ID and source scope;
-- counts by A-E decision;
-- one entry per item with filename or safe source label, decision, reason, and proposed action;
-- exact removal locators for B;
-- formal knowledge points and source locators for C;
-- failure reason for D;
-- exclusion reason for E;
-- a clear statement that no source file has been modified and B deletions have not occurred.
-
-The triage stage may copy A source files, copy B and available local D source files into their separate review-assets areas, and create C knowledge points directly from eligible company-owned R1 content. It must stop before editing B files or changing the classification of D files.
-
-## Preparation package manifest
-
-`knowledge-assets/package-manifest.json` must list every file placed in the preparation package:
-
-```json
-{
-  "package_version": "1.0",
-  "run_id": "20260909T120000Z-ab12cd34",
-  "assets": [
-    {
-      "asset_id": "asset-0001",
-      "item_id": "local-ab12cd34-1",
-      "asset_type": "source_file",
-      "decision": "A",
-      "path": "formal-knowledge/01_原始保留/example.docx",
-      "source_hash": "sha256-hex",
-      "importable": true,
-      "usable_as_fact": true
-    },
-    {
-      "asset_id": "asset-0002",
-      "item_id": "local-ef56gh78-2",
-      "asset_type": "source_file_pending_cleanup",
-      "decision": "B",
-      "path": "../review-assets/02_B待清理源文件/example.pdf",
-      "source_hash": "sha256-hex",
-      "importable": false,
-      "usable_as_fact": false,
-      "deletion_review_path": "../review-only/01_待删除/deletion-review.jsonl"
-    },
-    {
-      "asset_id": "asset-0003",
-      "item_id": "local-kl12mn34-4",
-      "asset_type": "source_file_pending_review",
-      "decision": "D",
-      "path": "../review-assets/03_D待定源文件/local-kl12mn34-4.pdf",
-      "source_hash": "sha256-hex",
-      "output_hash": "sha256-hex",
-      "verification_status": "hash_verified",
-      "review_status": "pending",
-      "importable": false,
-      "usable_as_fact": false,
-      "pending_review_path": "../review-only/02_待定/pending-items.jsonl"
-    },
-    {
-      "asset_id": "asset-0004",
-      "item_id": "local-ij90kl12-3",
-      "asset_type": "knowledge_point",
-      "decision": "C",
-      "path": "formal-knowledge/03_提取知识/knowledge-points.jsonl",
-      "importable": true,
-      "usable_as_fact": true
-    }
+  "pending_client_review": true,
+  "pending_scope": "part",
+  "client_review_items": [
+    {"summary": "某北美客户的合作案例", "location": "第 4 章 4.1", "question": "这个案例可以写进官网吗？"}
   ]
 }
 ```
+- For PDFs add `text_extraction` (`native`, `ocr`, or `mixed`), `ocr_pages`, and `ocr_verification`. Do not persist the OCR transcript.
 
-`importable` means eligible for the next knowledge-base import step, not that this skill writes to the production system. B source copies remain `importable: false` until cleaned and verified. D source copies remain `importable: false` until their uncertainty is resolved, the item is re-evaluated, and the resulting asset is verified.
+### Knowledge points
 
-## Processing records
-
-`knowledge-assets/formal-knowledge/04_处理记录/processing-records.jsonl` contains one sanitized record per A/B/C asset or decision. It must include `item_id`, `decision`, `asset_type`, source hash, output path or knowledge-point ID, locators, execution status, and verification status. It must not quote sensitive values or prohibited source content.
-
-Example processing record:
+Write one JSON object per line for `--knowledge-points`. Do not include an original excerpt.
 
 ```json
 {
-  "record_id": "record-0001",
-  "item_id": "local-ab12cd34-1",
-  "decision": "A",
-  "asset_type": "source_file",
-  "source_hash": "sha256-hex",
-  "output_path": "formal-knowledge/01_原始保留/example.docx",
-  "locators": [],
-  "execution_status": "copied",
-  "verification_status": "hash_verified",
-  "importable": true,
-  "usable_as_fact": true
+  "knowledge_id": "knowledge-0001",
+  "knowledge_point": "The company reviews custom dimensional requirements before confirming feasibility.",
+  "source_id": "local-ab12cd34-1",
+  "locator": "Customization Process > Review, paragraph 2",
+  "derivation": "abstracted_from_company_r1",
+  "scope": "style",
+  "removed_detail_types": ["internal_process_detail"]
 }
 ```
 
-For B, use `asset_type: source_file_pending_cleanup`, `execution_status: pending_deletion_review`, and `importable: false`. For C, use `asset_type: knowledge_point`, `execution_status: extracted`, and `importable: true`. D records belong in `review-only/02_待定/pending-items.jsonl`, not in formal processing records; their copies are indexed as non-importable in the package manifest only when actually produced.
+`scope` is required: `general`, `style`, or `single_communication`. A point is `approved` and usable as a fact without a second review. Set `pending_client_review: true` on points from customer cases or with unclear publication suitability; they become `pending_client_review` and are not usable as facts until the client confirms them. Add `client_location` and `client_question` so the workbook row reads plainly.
+
+## Manifest
+
+`审计记录/package-manifest.json` is the single record of the package. Each asset has:
+
+| Field | Meaning |
+|---|---|
+| `item_id`, `display_name`, `asset_kind` | Identity |
+| `decision`, `resource_type`, `pending_client_review`, `business_tags` | Triage result |
+| `pending_units` | Locations held back when only part of the file awaits the client |
+| `path` | Location inside the package, or null |
+| `copy_status` | `copied`, `duplicate`, `not_copied_restricted`, `withheld_by_client`, `not_persisted`, `copy_failed`, `missing_decision` |
+| `duplicate_of` | The item holding the same bytes in the same folder |
+| `source_hash`, `output_hash`, `verification_status` | Copy proof |
+| `parent_id` | The email an attachment belongs to |
+| `large_file` | Above 50MB; listed in `00_总清单.md` |
+| `importable` | True only for A items not restricted or withheld |
+| `usable_as_fact` | True for A items, except competitor, SEO-operations, restricted, and wholly pending items. With `pending_units`, those locations stay held back |
+
+`importable` means eligible for the next knowledge-base step, not that this skill writes to the production system. B items stay `importable: false` until cleaned and verified. D items stay false until the uncertainty is resolved and the item is re-classified.
+
+## Verification
+
+`scripts/verify_package.py <package> --extract-status <file>` must report `"verified": true` before the run is called complete. It fails when:
+
+- an inventory item has no decision, or a decision has no inventory item;
+- a listed file is missing, or differs from its source hash;
+- a file is in the package but not in the manifest;
+- a list contains `file:///` or a local absolute path;
+- an item is wrongly marked usable as a company fact, or importable without being A;
+- an A, B, C, or E item was not read, or an E item has no real reason;
+- an email was excluded without `mail_review`;
+- a quotation with product content was excluded as pricing, or a non-finance item is restricted;
+- a knowledge point from one email is marked `general`;
+- a knowledge point has no valid source, locator, or scope, or comes from competitor material;
+- anything awaiting the client is missing from `客户确认表.xlsx`, or a row has no summary or question;
+- attachments are missing, or emails have no mail manifest, and the gap was not accepted with `--accept-attachment-gaps`.
 
 ## Optional B cleanup approval
 
-If the user later asks to clean B files, create a separate approval record for the deletion actions so the triage package remains immutable:
+If the user later asks to clean B files, create a separate approval record for the deletion actions so the triage result remains immutable:
 
 ```json
 {
@@ -244,45 +179,12 @@ If the user later asks to clean B files, create a separate approval record for t
 }
 ```
 
-Never infer approval from file presence, silence, or an earlier general request. The approval record may be written only after an explicit approval message identifying all deletion actions or a clear subset.
+Never infer approval from file presence, silence, or an earlier general request. The approval record may be written only after an explicit approval message identifying all deletion actions or a clear subset. Check it with `scripts/verify_approved_plan.py`.
 
 ## Optional B cleanup output
 
-After approved and verified B cleanup, add to the same preparation package:
+Write cleaned copies to a separate directory and verify them as described in the format-handling reference. The B copy in the package stays unchanged. After verification, a cleaned file becomes an importable asset of the later knowledge-base step.
 
-```text
-knowledge-assets/formal-knowledge/02_清理后保留/<cleaned-files>
-execution-manifest.json
-文件处理报告.md
-```
+## Report
 
-After verification, cleaned B files replace their pending-cleanup status in the manifest and become importable. The original B source remains outside the formal knowledge package unless the user explicitly requests a protected archive.
-
-Do not copy raw E files or images by default. Available local D source copies belong only in `review-assets/03_D待定源文件/`, marked pending and non-importable. If the user explicitly requests a protected E or image archive, keep it outside `knowledge-assets/formal-knowledge/` and mark every file non-importable.
-
-## Formal knowledge-point object
-
-Do not include an original excerpt. The triage decision is the acceptance basis for a C knowledge point; no second review is required after the point is written and its source locator is recorded.
-
-```json
-{
-  "knowledge_id": "knowledge-0001",
-  "record_type": "knowledge_point",
-  "knowledge_point": "The company reviews custom dimensional requirements before confirming feasibility.",
-  "source_id": "local-ab12cd34-1",
-  "locator": "Customization Process > Review, paragraph 2",
-  "derivation": "abstracted_from_company_r1",
-  "status": "approved",
-  "removed_detail_types": ["internal_process_detail"],
-  "importable": true,
-  "usable_as_fact": true
-}
-```
-
-Knowledge points from eligible company-owned R1 content appear under `knowledge-assets/formal-knowledge/03_提取知识/knowledge-points.jsonl` during triage, with a safe source ID and precise locator. They are formal, importable knowledge assets and do not require a second approval cycle. The B-cleanup approval verifier must reject C extraction actions because C extraction has already occurred during triage.
-
-## Execution manifest and report
-
-The manifest must list produced artifacts, source IDs, executed action IDs, source hashes, output hashes, verification status, `record_type`, `importable`, and `usable_as_fact` where applicable. It must not contain prohibited values.
-
-The report must include counts, assets placed in the package, B files awaiting cleanup, formal knowledge points, items not included, competitor/customer-case exclusions, standalone-image/non-processable counts, PDFs and page counts processed with OCR, OCR verification failures, changed-source failures, and remaining human decisions. Describe excluded content by reason code and locator, not by quoting or summarizing it.
+Summarize in the final message: counts by decision and type, files placed, B files awaiting cleanup, knowledge points by scope, items awaiting the client, restricted and withheld items, attachment gaps, PDFs and pages processed with OCR, OCR failures, and remaining human decisions. Describe excluded content by reason code and location, not by quoting it.
