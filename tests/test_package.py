@@ -127,7 +127,7 @@ class PlacementTests(PackageCase):
             items,
             {
                 "a.pdf": {"decision": "A", "resource_type": "marketing"},
-                "b.xlsx": {"decision": "B", "resource_type": "product"},
+                "b.xlsx": {"decision": "B", "resource_type": "product", "actions": [{"locators": ["Sheet1!E:E"]}]},
                 "c.md": {"decision": "C", "resource_type": "business_scenario"},
                 "d.docx": {"decision": "D", "resource_type": "unknown", "content_read": False},
                 "e.xlsx": {"resource_type": "transaction", "reason_codes": ["transaction_detail"]},
@@ -413,6 +413,84 @@ class ReviewRuleTests(PackageCase):
         status = self.status_file(items["prices.xlsx"]["item_id"], product_signal=False, embedded_media=0)
         self.assertEqual(self.verify("--extract-status", str(status)).returncode, 0)
 
+    def rejected_with(self, name: str, override: dict[str, Any], message: str, **facts: Any) -> None:
+        self.add_source(name, "x")
+        items = self.inventory()
+        self.decisions(items, {name: override})
+        self.assertEqual(self.build().returncode, 0)
+        status = self.status_file(items[name]["item_id"], **facts)
+        verified = self.verify("--extract-status", str(status), "--accept-attachment-gaps", "test")
+        self.assertEqual(verified.returncode, 2, verified.stdout)
+        self.assertIn(message, verified.stdout)
+
+    def test_workbook_with_product_images_cannot_hide_as_finance(self) -> None:
+        self.rejected_with(
+            "客户报价.xlsx",
+            {"resource_type": "finance", "restricted": True, "reason_codes": ["customer_identity"]},
+            "product images marked as finance",
+            product_signal=True,
+            embedded_media=20,
+        )
+
+    def test_real_ledger_with_pictures_can_be_confirmed_as_finance(self) -> None:
+        self.add_source("客户跟进.xlsx", "x")
+        items = self.inventory()
+        self.decisions(items, {"客户跟进.xlsx": {"resource_type": "finance", "restricted": True, "no_product_rows": True, "reason_codes": ["customer_ledger"]}})
+        self.assertEqual(self.build().returncode, 0)
+        status = self.status_file(items["客户跟进.xlsx"]["item_id"], product_signal=True, embedded_media=3)
+        self.assertEqual(self.verify("--extract-status", str(status)).returncode, 0)
+
+    def test_finance_named_file_cannot_be_kept(self) -> None:
+        self.rejected_with(
+            "26年收汇明细.xls",
+            {"decision": "B", "resource_type": "product", "actions": [{"locators": ["Sheet1!E:E"]}]},
+            "Finance-named file kept as B",
+        )
+
+    def test_vague_removal_location_is_rejected(self) -> None:
+        self.rejected_with(
+            "quote.xlsx",
+            {"decision": "B", "resource_type": "product", "actions": [{"locators": ["按列名删除价格、数量与客户信息列"]}]},
+            "no exact removal location",
+        )
+
+    def test_customer_cases_must_reach_the_client(self) -> None:
+        self.rejected_with(
+            "profile.docx",
+            {"decision": "A", "resource_type": "marketing", "pending_client_review": True, "client_review_items": [{"summary": "成立年份", "location": "第 1 页", "question": "用哪一年？"}], "pending_scope": "part"},
+            "Customer cases not sent",
+            case_signal=True,
+        )
+
+    def test_partial_decision_must_not_hold_back_the_whole_file(self) -> None:
+        self.rejected_with(
+            "profile.docx",
+            {"decision": "A", "resource_type": "marketing", "pending_client_review": True, "client_review_items": [{"summary": "成立年份", "location": "第 1 页", "question": "用哪一年？"}]},
+            "Only part of the file awaits",
+        )
+
+    def point_case(self, text: str, locator: str) -> Any:
+        self.add_source("mail.md", self.MAIL)
+        items = self.inventory()
+        source = items["mail.md"]["item_id"]
+        self.decisions(items, {"mail.md": {"decision": "C", "resource_type": "business_scenario"}})
+        path = self.root / "points.jsonl"
+        path.write_text(json.dumps({"knowledge_id": "k1", "knowledge_point": text, "source_id": source, "locator": locator, "scope": "single_communication"}), encoding="utf-8")
+        self.assertEqual(self.build("--knowledge-points", str(path)).returncode, 0)
+        candidates = self.root / "mail-candidates.jsonl"
+        candidates.write_text(json.dumps({"item_id": source, "locator": "邮件3 (2026-01-02) 发", "sentence": "x"}), encoding="utf-8")
+        return self.verify("--accept-attachment-gaps", "test", "--mail-candidates", str(candidates))
+
+    def test_price_in_a_knowledge_point_is_rejected(self) -> None:
+        verified = self.point_case("新面料打样收取 150 美元成本费", "邮件3 (2026-01-02) 发")
+        self.assertEqual(verified.returncode, 2)
+        self.assertIn("contains a price", verified.stdout)
+
+    def test_point_must_cite_a_company_message(self) -> None:
+        verified = self.point_case("面料要先水洗", "邮件1 (2026-01-01) 收")
+        self.assertEqual(verified.returncode, 2)
+        self.assertIn("not a company message", verified.stdout)
+
     def test_only_finance_may_be_restricted(self) -> None:
         self.add_source("quote.xlsx", "x")
         self.decisions(self.inventory(), {"quote.xlsx": {"resource_type": "transaction", "restricted": True}})
@@ -477,6 +555,8 @@ class MailCandidateTests(PackageCase):
         )
         sentences = [r["sentence"] for r in self.run_candidates("--sent-marker", "发")]
         self.assertEqual(sentences, ["We usually wash the fabric first to control shrinkage in garments."])
+        messages = json.loads((self.root / "work" / "mail-messages.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(messages.values()), [["邮件2 (2026-01-02) 发"]])
 
     def test_statements_are_marked_for_reading_in_full(self) -> None:
         self.add_source(
@@ -622,6 +702,7 @@ class ClientWorkbookTests(PackageCase):
                     "decision": "A",
                     "resource_type": "business_scenario",
                     "pending_client_review": True,
+                    "pending_scope": "part",
                     "summary": "含两个客户案例",
                     "client_review_items": [
                         {"summary": "北美客户合作案例", "location": "第 3 页", "question": "这个案例可以写进官网吗？"},
@@ -655,7 +736,8 @@ class ClientWorkbookTests(PackageCase):
         self.assertEqual(self.asset("rival.pdf")["path"], "A-原文保留/竞对资料/rival.pdf")
         self.assertFalse(self.asset("rival.pdf")["usable_as_fact"])
         self.assertTrue(self.asset("own.pdf")["usable_as_fact"])
-        self.assertFalse(self.asset("cases.docx")["usable_as_fact"])
+        self.assertTrue(self.asset("cases.docx")["usable_as_fact"])
+        self.assertEqual(self.asset("cases.docx")["pending_units"], ["第 3 页", "第 4 页"])
         self.assertTrue(self.asset("cases.docx")["importable"])
 
     def test_choices_survive_a_save_by_excel(self) -> None:

@@ -127,6 +127,7 @@ def main() -> int:
     domains = [domain.lower() for domain in args.own_domain]
     seen: set[str] = set()
     records: list[dict[str, Any]] = []
+    company_messages: dict[str, list[str]] = {}
     scanned = 0
     without_candidates = 0
     read_errors: list[str] = []
@@ -144,6 +145,8 @@ def main() -> int:
         for heading, body in message_blocks(text):
             if not is_own_message(heading, body, args.sent_marker, domains):
                 continue
+            if heading:
+                company_messages.setdefault(item["item_id"], []).append(heading.strip("# ").strip())
             for sentence in candidate_sentences(strip_quoted(body)):
                 key = normalized(sentence)
                 if key in seen or kept >= MAX_SENTENCES_PER_MAIL:
@@ -164,6 +167,7 @@ def main() -> int:
     with (work / "mail-candidates.jsonl").open("w", encoding="utf-8", newline="\n") as handle:
         for record in records:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    write_json_file(work / "mail-messages.json", company_messages)
     summary = {
         "mails_scanned": scanned,
         "candidate_sentences": len(records),

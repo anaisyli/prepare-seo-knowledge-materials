@@ -127,7 +127,8 @@ python scripts/build_package.py `
 
 # 6. 校验，通过才算完成
 python scripts/verify_package.py D:\Run\02_初筛包 `
-  --extract-status D:\Run\_working\extract-status.json
+  --extract-status D:\Run\_working\extract-status.json `
+  --mail-candidates D:\Run\_working\mail-candidates.jsonl
 ```
 
 只想先扫一遍做 Obsidian 目录时，第 1 步加 `--catalog <目录.md>` 即可。这一步只看文件名和大小，不读内容。
@@ -167,9 +168,13 @@ python scripts/verify_package.py D:\Run\02_初筛包 `
 - 清单里出现 `file:///` 或本机路径；
 - 没打开过的文件被判了 A、B、C、E；
 - 邮件没有经过全文或候选句审查就被排除；
-- 含产品列或产品图的报价单被当成纯价格表排除；
+- 含产品列或产品图的报价单被当成纯价格表排除，或被标成财务；
+- 名字像收汇、发票、合同的文件被留在 A 或 B；
+- B 类没有写具体删除位置；
+- 客户案例没有进客户确认表；
+- 只有部分内容待确认，却卡住整份文件；
 - 财务以外的文件被标成“受限”；
-- 来自单封邮件的知识点被写成“通用”；
+- 来自单封邮件的知识点被写成“通用”、含有价格，或对不上公司发出的消息；
 - E 类没有具体原因；
 - 竞对或待客户审核的内容被标成公司事实；
 - 待客户审核的内容没有进客户确认表；

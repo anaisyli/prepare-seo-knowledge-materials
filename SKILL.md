@@ -27,7 +27,7 @@ Keep working files in a directory outside both the sources and the package. Run 
 5. Read [references/classification-policy.md](references/classification-policy.md). Assign R0-R4 codes to the smallest reliable units first, then one A-E `decision` for the item, then its business tag (`resource_type`). Judge attachments on their own; an excluded email does not exclude its attachment.
 6. Write `triage-results.json` and, for C items, `knowledge-points.jsonl` as specified in [references/output-contract.md](references/output-contract.md).
 7. Run `scripts/build_package.py` with `--company` set to the client's name. It copies every file into its folder, verifies each hash, and writes all lists, the client workbook, and the manifest. Finance, contract, and account items are recorded but not copied unless the run asks for `--include-restricted`. Excluded files are copied too, so a wrong call can be recovered. Use `--withhold` with file names the client does not allow to leave site.
-8. Run `scripts/verify_package.py` with `--extract-status`. A run is complete only when it reports `"verified": true`. Fix what it reports and rebuild into a new empty directory; never edit the package by hand to make it pass.
+8. Run `scripts/verify_package.py` with `--extract-status` and, when there are emails, `--mail-candidates`. A run is complete only when it reports `"verified": true`. Fix what it reports and rebuild into a new empty directory; never edit the package by hand to make it pass.
 9. If attachments are missing, report them. Pass `--accept-attachment-gaps` only when the user has accepted the gap, and state in it what actually happened. Never write that the client agreed unless the user said so.
 10. The package holds `客户确认表.xlsx` for the client's post-triage review. Tell the user how many entries await the client, and that only this file goes to the client.
 
@@ -37,10 +37,12 @@ Keep working files in a directory outside both the sources and the package. Run 
 - Extract what is useful. A few useful sentences in a transactional email become knowledge points even though the email itself is not retained.
 - Mostly transactional content is not a reason to exclude. Use E only when no usable unit remains.
 - A quotation with product columns or product images is B, never E. `pricing` is only for price lists with nothing else in them.
-- `restricted` is only for finance, contract, account, and customer-ledger files. Quotations are not restricted.
+- `restricted` is only for finance, contract, account, and customer-ledger files. Quotations are not restricted, even when they name customers: remove those columns and keep the product rows. Set `no_product_rows: true` only after checking that a finance workbook has no reusable product rows.
+- Every B item needs exact locations such as `Sheet1!E:E`. "Delete by column name" is not a location.
 - A summary extracted from eligible company-owned R1 content during triage is a formal knowledge point; it does not require a second review cycle. State its scope: `general`, `style`, or `single_communication`. A point from one email is never `general`.
 - The client reviews the result after triage. When publication suitability is unclear, keep the content and set `pending_client_review: true` rather than exclude it.
-- Keep customer cases with `pending_client_review: true`; the client decides whether each can be used. When a case is only part of a document, also set `pending_scope: "part"`, so the rest of the document stays usable.
+- Keep customer cases with `pending_client_review: true`, with one `client_review_items` entry per case. When a question covers only part of a document, also set `pending_scope: "part"`, so the rest stays usable.
+- A knowledge point cites the company message it came from, and never contains a price.
 - Keep competitor and third-party material separately as `resource_type: competitor`. It is never a fact about the company and produces no knowledge points about it.
 - Prices, internal financial data, and personal data never enter retained content. Remove the smallest complete semantic unit that eliminates both the sensitive detail and its reconstructable context; masking a name is not enough.
 - Never convert a single quotation, order, project, or communication into a standard company specification, MOQ, lead time, price, or guaranteed capability.

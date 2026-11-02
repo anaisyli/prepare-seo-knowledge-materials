@@ -156,8 +156,10 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 - an item is wrongly marked usable as a company fact, or importable without being A;
 - an A, B, C, or E item was not read, or an E item has no real reason;
 - an email was excluded without `mail_review`;
-- a quotation with product content was excluded as pricing, or a non-finance item is restricted;
-- a knowledge point from one email is marked `general`;
+- a quotation with product content was excluded as pricing or hidden as finance, a finance-named file was kept as A or B, or a non-finance item is restricted;
+- a B item has no exact location;
+- customer cases were not sent for client review, or a partial question holds back the whole file;
+- a knowledge point from one email is marked `general`, contains a price, or does not cite a company message;
 - a knowledge point has no valid source, locator, or scope, or comes from competitor material;
 - anything awaiting the client is missing from `客户确认表.xlsx`, or a row has no summary or question;
 - attachments are missing, or emails have no mail manifest, and the gap was not accepted with `--accept-attachment-gaps`.

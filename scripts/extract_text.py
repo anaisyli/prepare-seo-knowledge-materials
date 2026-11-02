@@ -34,6 +34,7 @@ TEXT_EXTENSIONS = {
 }
 LEGACY_OFFICE = {".xls": "xlsx", ".doc": "docx", ".ppt": "pptx"}
 MIN_PAGE_CHARACTERS = 20
+CASE_WORDS = re.compile(r"(?i)合作案例|客户案例|成功案例|case stud(y|ies)|success stor(y|ies)|testimonial")
 PRODUCT_WORDS = re.compile(
     r"(?i)description|fabric|composition|material|style\s*(no|#)|item\s*no|\b\d{2,3}\s?gsm\b|"
     r"面料|成分|克重|款号|款式|品名"
@@ -212,6 +213,7 @@ def read_item(path: Path, extension: str, work: Path, timeout: int) -> dict[str,
 
     characters = sum(len(unit["text"]) for unit in units)
     facts["product_signal"] = any(PRODUCT_WORDS.search(unit["text"]) for unit in units)
+    facts["case_signal"] = any(CASE_WORDS.search(unit["text"]) for unit in units)
     status = "read_ok"
     if facts.get("ocr_pages"):
         status = "needs_ocr" if characters < MIN_PAGE_CHARACTERS else "partial"

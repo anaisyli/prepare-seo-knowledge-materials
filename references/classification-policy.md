@@ -29,7 +29,7 @@ After the A-E decision, give every item one `resource_type`. It sorts the materi
 | `noise` | Greetings, chasers, signatures, logos |
 | `unknown` | Not yet determined |
 
-`restricted` means recorded but not copied. Use it only with `finance`; a quotation or a mixed sheet is not restricted. A workbook with product columns or embedded product images cannot be `pricing`: make it B.
+`restricted` means recorded but not copied. Use it only with `finance`; a quotation or a mixed sheet is not restricted, even when it names customers. A workbook typed `finance` that has product wording and images needs `no_product_rows: true`, set only after checking it has no reusable product rows. A workbook with product columns or embedded product images cannot be `pricing`: make it B.
 
 Set `pending_client_review: true` when the client must decide whether the content can be used: customer cases, and content whose publication suitability is unclear. The item stays in the package, and the client decides during the post-triage review.
 
@@ -149,8 +149,8 @@ Knowledge points must:
 
 - preserve the evidence scope without adding capabilities, guarantees, or generality;
 - contain no customer, supplier, competitor, transaction, project, personal, internal-financial, or confidential details;
-- omit original excerpts and prohibited values;
-- retain a safe source ID and precise locator;
+- omit original excerpts and prohibited values, including every price;
+- retain a safe source ID and the locator of the company message or page it came from. What a customer wrote is not company knowledge;
 - be created during triage from an eligible company-owned R1 unit and never be routed through the B-cleanup approval gate;
 - state its `scope`: `general` for the company as a whole, `style` for one product or style, or `single_communication` for something seen once. A point from a single email is never `general`;
 - use the following state in the execution output:

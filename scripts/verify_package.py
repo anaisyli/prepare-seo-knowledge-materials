@@ -25,10 +25,17 @@ from package_common import (
 )
 
 
+FINANCE_NAME = re.compile(r"(?i)收汇|发票|invoice|合同|contract|工资|银行|外汇|对账|账户")
+EXACT_LOCATOR = re.compile(r"(?i)\b[A-Z]{1,3}\d*:[A-Z]{1,3}\d*\b|\b[A-Z]{1,3}\d+\b|第\s*\d|page\s*\d|slide\s*\d|para\s*\d|paragraph\s*\d")
+PRICE_VALUE = re.compile(r"(?i)[$￥¥€]\s?\d|\d\s?(美元|美金|元)|\d\s?(usd|rmb|cny|eur)\b|\b(usd|rmb|cny)\s?\d")
+CASE_ENTRY = re.compile(r"(?i)案例|case|客户|testimonial")
 LOCAL_PATH_PATTERN = re.compile(r"file:///|(?<![A-Za-z0-9])[A-Za-z]:[\\/]")
 UNREADABLE_STATES = {"failed", "needs_ocr", "needs_pdf_reader", "unsupported"}
 COPIED_STATES = {"copied"}
 RECORD_ONLY_STATES = {"not_copied_restricted", "withheld_by_client", "not_persisted", "duplicate"}
+
+
+WHOLE_ITEM = {"整份文件", "整张图", "全文", "whole file"}
 
 
 def package_files(package: Path) -> set[str]:
@@ -94,6 +101,40 @@ def check_rules(
             errors.append(f"Only finance items may be restricted: {item_id}")
         status = extraction.get(item_id) or {}
         if (
+            item.get("resource_type") == "finance"
+            and status.get("product_signal")
+            and status.get("embedded_media")
+            and item.get("no_product_rows") is not True
+        ):
+            errors.append(f"Workbook with product images marked as finance: {item_id}")
+        name = str(asset.get("display_name") or "")
+        if decision in {"A", "B"} and FINANCE_NAME.search(name):
+            errors.append(f"Finance-named file kept as {decision}: {item_id}")
+        if decision == "B":
+            locators = [
+                str(locator)
+                for action in item.get("actions", [])
+                for locator in action.get("locators", [])
+            ]
+            if not any(EXACT_LOCATOR.search(locator) for locator in locators):
+                errors.append(f"B item has no exact removal location: {item_id}")
+        if decision in {"A", "B"} and status.get("case_signal"):
+            entries = item.get("client_review_items", [])
+            if not item.get("pending_client_review") or not any(
+                CASE_ENTRY.search(str(entry.get("summary"))) for entry in entries
+            ):
+                errors.append(f"Customer cases not sent for client review: {item_id}")
+        if (
+            item.get("pending_client_review") is True
+            and item.get("pending_scope") != "part"
+            and item.get("client_review_items")
+            and all(
+                entry.get("location") and entry.get("location") not in WHOLE_ITEM
+                for entry in item["client_review_items"]
+            )
+        ):
+            errors.append(f"Only part of the file awaits the client, use pending_scope: {item_id}")
+        if (
             decision == "E"
             and item.get("resource_type") == "pricing"
             and (status.get("product_signal") or status.get("embedded_media"))
@@ -118,10 +159,17 @@ def check_points(
     points: list[dict[str, Any]],
     triage_items: dict[str, dict[str, Any]],
     mail_ids: set[str],
+    candidates: dict[str, set[str]] | None,
     errors: list[str],
 ) -> None:
     for point in points:
         knowledge_id = point.get("knowledge_id")
+        if PRICE_VALUE.search(str(point.get("knowledge_point"))):
+            errors.append(f"Knowledge point contains a price: {knowledge_id}")
+        source = point.get("source_id")
+        if candidates is not None and source in mail_ids:
+            if str(point.get("locator")) not in candidates.get(source, set()):
+                errors.append(f"Knowledge point location is not a company message: {knowledge_id}")
         if point.get("source_id") not in triage_items:
             errors.append(f"Knowledge point has an unknown source: {knowledge_id}")
         if not point.get("locator"):
@@ -172,7 +220,12 @@ def check_client_review(
             errors.append(f"Workbook row has no summary or question: {row['id']}")
 
 
-def verify(package: Path, extract_status: Path | None, gap_reason: str | None) -> dict[str, Any]:
+def verify(
+    package: Path,
+    extract_status: Path | None,
+    gap_reason: str | None,
+    mail_candidates: Path | None = None,
+) -> dict[str, Any]:
     errors: list[str] = []
     manifest = load_json_object(package / MANIFEST_NAME)
     assets = manifest.get("assets", [])
@@ -199,7 +252,17 @@ def verify(package: Path, extract_status: Path | None, gap_reason: str | None) -
 
     points_path = package / "C-知识点" / "knowledge-points.jsonl"
     points = load_jsonl(points_path) if points_path.exists() else []
-    check_points(points, triage_items, mail_ids, errors)
+    candidates = None
+    if mail_candidates:
+        candidates = {}
+        for row in load_jsonl(mail_candidates):
+            candidates.setdefault(row["item_id"], set()).add(row["locator"])
+        # Short messages hold no candidate sentence but can still hold a fact.
+        messages = mail_candidates.with_name("mail-messages.json")
+        if messages.exists():
+            for item_id, headings in load_json_object(messages).items():
+                candidates.setdefault(item_id, set()).update(headings)
+    check_points(points, triage_items, mail_ids, candidates, errors)
     check_local_paths(package, files, errors)
     check_client_review(package, assets, points, errors)
 
@@ -237,6 +300,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("package", help="Package directory")
     parser.add_argument("--extract-status", help="extract-status.json from extract_text.py")
+    parser.add_argument("--mail-candidates", help="mail-candidates.jsonl from mail_candidates.py")
     parser.add_argument(
         "--accept-attachment-gaps",
         metavar="REASON",
@@ -252,6 +316,7 @@ def main() -> int:
             Path(args.package).resolve(),
             Path(args.extract_status).resolve() if args.extract_status else None,
             args.accept_attachment_gaps,
+            Path(args.mail_candidates).resolve() if args.mail_candidates else None,
         )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(json.dumps({"verified": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
