@@ -53,6 +53,7 @@ DECISION_LABELS = {
     "D": "待定",
     "E": "排除",
 }
+MEDIA_LABELS = {"video": "视频，待转写", "audio": "音频，待转写", "image": "图片，待看"}
 SCOPE_LABELS = {"general": "通用", "style": "某个款式", "single_communication": "某次沟通"}
 
 
@@ -428,6 +429,26 @@ def write_client_review(
     return len(rows)
 
 
+def media_section(records: list[dict[str, Any]]) -> list[str]:
+    """Gather the audio, video, and unseen images, so they are not lost among D items."""
+    waiting = [
+        record
+        for record in records
+        if record.get("decision") == "D"
+        and record.get("asset_kind") in MEDIA_LABELS
+        and record.get("copy_status") == "copied"
+    ]
+    rows = ["## 待转写/待看", ""]
+    if not waiting:
+        return [*rows, "无", ""]
+    rows += ["| 文件 | 类型 | 大小 |", "|---|---|---|"]
+    for record in sorted(waiting, key=lambda entry: (entry["asset_kind"], str(entry.get("display_name")))):
+        size = (record.get("byte_size") or 0) / (1024 * 1024)
+        link = file_link("00_总清单.md", record)
+        rows.append(f"| {link} | {MEDIA_LABELS[record['asset_kind']]} | {size:.1f} MB |")
+    return [*rows, ""]
+
+
 def write_summary(
     package: Path,
     records: list[dict[str, Any]],
@@ -465,6 +486,7 @@ def write_summary(
         "",
         f"- `{WORKBOOK_NAME}` 里有 {review_count} 项等客户确认。",
         "",
+        *media_section(records),
         "## 超过 50MB 的文件",
         "",
     ]

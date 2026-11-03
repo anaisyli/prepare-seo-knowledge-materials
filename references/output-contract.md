@@ -32,7 +32,7 @@
 ```
 
 - `<标签>` is the fixed Chinese label of the `resource_type`. Competitor material sits in `A-原文保留/竞对资料/`.
-- Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer.
+- Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer, and under 待转写/待看 the video, audio, and images in D.
 - `客户确认表.xlsx` is the only file for the client. One sheet holds everything awaiting a decision, with a dropdown of 保留 / 不用 / 需要修改. The other lists what was recorded but not taken. Its hidden 编号 column links each row back to its item.
 - The package is internal and restricted; never forward it whole. Only assets marked `importable: true` go to the next step, and `审计记录/` holds absolute source paths.
 

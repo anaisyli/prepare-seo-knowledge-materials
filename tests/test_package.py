@@ -837,6 +837,54 @@ class WorkbookWordingTests(PackageCase):
         self.assertEqual(row["question"], "这段内容可以使用吗？")
 
 
+class MediaTests(PackageCase):
+    def test_more_media_formats_are_recognised(self) -> None:
+        for name in ("a.flv", "b.mpg", "c.3gp", "d.flac", "e.wma", "f.m4b"):
+            self.add_source(name, name)
+        items = self.inventory()
+        kinds = {name: item["asset_kind"] for name, item in items.items()}
+        self.assertEqual({kinds[n] for n in ("a.flv", "b.mpg", "c.3gp")}, {"video"})
+        self.assertEqual({kinds[n] for n in ("d.flac", "e.wma", "f.m4b")}, {"audio"})
+
+    def test_typescript_file_is_not_treated_as_video(self) -> None:
+        self.add_source("app.ts", "x")
+        self.assertEqual(self.inventory()["app.ts"]["asset_kind"], "document")
+
+    def test_subtitle_files_are_read_as_text(self) -> None:
+        self.add_source("training.srt", "1\n00:00:01,000 --> 00:00:03,000\nOur fleece is 280gsm\n")
+        self.add_source("training.vtt", "WEBVTT\n\n00:01.000 --> 00:03.000\nWe wash the fabric first\n")
+        items = self.inventory()
+        self.assertTrue(items["training.srt"]["supported_extension"])
+        work = self.root / "work"
+        self.assertEqual(run_script("extract_text.py", str(self.inventory_path), "--work", str(work)).returncode, 0)
+        status = json.loads((work / "extract-status.json").read_text(encoding="utf-8"))["items"]
+        self.assertEqual({entry["status"] for entry in status.values()}, {"read_ok"})
+        texts = " ".join(p.read_text(encoding="utf-8") for p in (work / "text").glob("*.json"))
+        self.assertIn("Our fleece is 280gsm", texts)
+
+    def test_summary_lists_what_waits_for_transcription_or_viewing(self) -> None:
+        self.add_source("training.mp4", "video")
+        self.add_source("call.m4a", "audio")
+        self.add_source("photo.png", "image")
+        self.add_source("signature.png", "logo")
+        waiting = {"decision": "D", "resource_type": "unknown", "content_read": False}
+        self.decisions(self.inventory(), {"training.mp4": waiting, "call.m4a": waiting, "photo.png": waiting})
+        self.assert_built_and_verified()
+        summary = (self.package / "00_总清单.md").read_text(encoding="utf-8")
+        section = summary.split("## 待转写/待看")[1].split("## 超过 50MB")[0]
+        self.assertIn("[training.mp4](<D-待定/training.mp4>) | 视频，待转写", section)
+        self.assertIn("音频，待转写", section)
+        self.assertIn("图片，待看", section)
+        self.assertNotIn("signature.png", section)
+
+    def test_summary_says_when_nothing_waits(self) -> None:
+        self.add_source("a.md", "x")
+        self.decisions(self.inventory(), {})
+        self.assert_built_and_verified()
+        summary = (self.package / "00_总清单.md").read_text(encoding="utf-8")
+        self.assertIn("## 待转写/待看\n\n无", summary)
+
+
 class CatalogTests(PackageCase):
     def test_catalog_lists_every_folder_without_reading_content(self) -> None:
         self.add_source("产品/catalog.pdf", "SECRET-BODY")

@@ -33,8 +33,12 @@ DECISIONS = {"A", "B", "C", "D", "E"}
 NON_FACT_TYPES = {"competitor", "seo_ops"}
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".heic"}
-VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".webm", ".m4v"}
-AUDIO_EXTENSIONS = {".mp3", ".m4a", ".wav", ".aac", ".ogg", ".amr"}
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".webm", ".m4v", ".flv", ".mpg", ".mpeg", ".3gp", ".m2ts",
+}
+AUDIO_EXTENSIONS = {
+    ".mp3", ".m4a", ".wav", ".aac", ".ogg", ".amr", ".flac", ".wma", ".m4b", ".opus",
+}
 ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z", ".tar", ".gz"}
 
 AUDIT_DIRECTORY = "审计记录"

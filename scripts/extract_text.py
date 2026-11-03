@@ -31,6 +31,7 @@ RELATIONSHIP = "{http://schemas.openxmlformats.org/officeDocument/2006/relations
 
 TEXT_EXTENSIONS = {
     ".md", ".markdown", ".txt", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".xml",
+    ".srt", ".vtt",
 }
 LEGACY_OFFICE = {".xls": "xlsx", ".doc": "docx", ".ppt": "pptx"}
 MIN_PAGE_CHARACTERS = 20

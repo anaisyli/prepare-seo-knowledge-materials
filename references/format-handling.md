@@ -11,7 +11,8 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 
 ## Video and audio
 
-- Record them as D. They are not transcribed during triage; state in `required_follow_up` that transcription is pending.
+- Record them as D. They are not transcribed during triage; state in `required_follow_up` that transcription is pending. `00_总清单.md` lists them under 待转写/待看.
+- Read a `.srt` or `.vtt` file beside a video as text. It can settle the video's content without transcription.
 
 ## Archives
 
