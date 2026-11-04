@@ -179,8 +179,13 @@ def inventory_item(path: Path) -> dict[str, object]:
     return item
 
 
+# Inline images the extractor chose not to keep: placeholders, separators, or
+# images it was told to skip. They were never meant to arrive, so they are not missing.
+FILTERED_INLINE = ("inline_small", "inline_skipped")
+
+
 def link_mail_attachments(
-    items: list[dict[str, object]], manifest_path: Path
+    items: list[dict[str, object]], manifest_path: Path, filtered: list[int]
 ) -> list[dict[str, object]]:
     """Attach each saved file to its email and return the ones never saved."""
     by_path = {normalized_key(Path(str(item["source_ref"]))): item for item in items}
@@ -199,7 +204,11 @@ def link_mail_attachments(
         if parent is not None:
             parent["mail_manifest_linked"] = True
         for attachment in row.get("attachments", []):
-            child = locate(attachment.get("saved_to"))
+            if str(attachment.get("skipped") or "").startswith(FILTERED_INLINE):
+                filtered[0] += 1
+                continue
+            # A repeated file is stored once; its saved_to points at that copy.
+            child = locate(attachment.get("saved_to")) or locate(attachment.get("duplicate_of"))
             if child is None:
                 missing.append(
                     {
@@ -339,8 +348,9 @@ def main() -> int:
     files, warnings = collect_files(args.inputs, output_path)
     items = [inventory_item(path) for path in files]
     missing = []
+    filtered = [0]
     if args.mail_manifest:
-        missing = link_mail_attachments(items, Path(args.mail_manifest).expanduser())
+        missing = link_mail_attachments(items, Path(args.mail_manifest).expanduser(), filtered)
     mark_mail(items)
     document: dict[str, object] = {
         "inventory_version": "1.1",
@@ -350,6 +360,7 @@ def main() -> int:
         "item_count": len(items),
         "items": items,
         "missing_attachments": missing,
+        "filtered_inline_images": filtered[0],
         "attachment_export_gaps": find_export_gaps(items),
         "attachment_unverified": find_unverified_mail(items),
         "warnings": warnings,

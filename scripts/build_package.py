@@ -479,6 +479,7 @@ def write_summary(
         "",
         f"- 已关联到邮件的附件：{attachments}",
         f"- 取料时未保存的附件：{len(missing)}",
+        f"- 取料时过滤掉的内嵌图（签名、占位图等）：{inventory.get('filtered_inline_images', 0)}",
         f"- 导出时未带附件的邮件：{len(gaps)}",
         f"- 无法确认附件是否完整的邮件：{len(unverified)}",
         "",

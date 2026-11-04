@@ -106,5 +106,6 @@ Use a real parser for JSON, JSONL, YAML, CSV, TSV, or XML. Do not use regular ex
 - Keep that manifest outside the materials directory so it is not inventoried as a source.
 - An export that left its attachments behind is listed under `attachment_export_gaps`. `verify_package.py` fails on either list until the user accepts the gap.
 - Inventory marks each email `is_mail: true`, which is what `mail_candidates.py` and the email rules in `verify_package.py` act on.
+- Inline images the extractor filtered out (`skipped` of `inline_small` or `inline_skipped`) are counted under `filtered_inline_images`, not as missing. A repeated attachment stored once is linked through `duplicate_of`.
 - Emails that no manifest covers are listed under `attachment_unverified`, whichever tool exported them, because nothing shows their attachments arrived. `verify_package.py` fails on this list too until the user accepts it.
 - Files found on a client's computer carry no `parent_id`. That is normal; do not guess which email they came from.

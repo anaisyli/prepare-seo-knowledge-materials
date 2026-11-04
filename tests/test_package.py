@@ -359,6 +359,35 @@ class AttachmentTests(PackageCase):
         self.assert_built_and_verified()
         self.assertEqual(self.asset("price.xlsx")["parent_id"], items["mail.md"]["item_id"])
 
+    def test_filtered_inline_images_are_not_missing(self) -> None:
+        self.add_source("mail.md", "see attachment")
+        saved = self.add_source("quote.xlsx", "x")
+        manifest = self.mail_manifest([
+            {"filename": "quote.xlsx", "kind": "attachment", "saved_to": str(saved)},
+            {"filename": "spacer.gif", "kind": "inline", "skipped": "inline_small"},
+            {"filename": "image001.png", "kind": "inline", "skipped": "inline_skipped"},
+        ])
+        items = self.inventory("--mail-manifest", str(manifest))
+        document = json.loads(self.inventory_path.read_text(encoding="utf-8"))
+        self.assertEqual(document["missing_attachments"], [])
+        self.assertEqual(document["filtered_inline_images"], 2)
+        self.decisions(items, {})
+        self.assert_built_and_verified()
+        self.assertIn("过滤掉的内嵌图（签名、占位图等）：2", (self.package / "00_总清单.md").read_text(encoding="utf-8"))
+
+    def test_repeated_attachment_links_to_the_stored_copy(self) -> None:
+        self.add_source("mail.md", "see attachment")
+        saved = self.add_source("banner.png", "x")
+        gone = str(self.sources / "banner_1.png")
+        manifest = self.mail_manifest([
+            {"filename": "banner.png", "saved_to": str(saved)},
+            {"filename": "banner.png", "saved_to": gone, "duplicate_of": str(saved)},
+        ])
+        document_items = self.inventory("--mail-manifest", str(manifest))
+        document = json.loads(self.inventory_path.read_text(encoding="utf-8"))
+        self.assertEqual(document["missing_attachments"], [])
+        self.assertEqual(document_items["banner.png"]["parent_id"], document_items["mail.md"]["item_id"])
+
     def test_unsaved_attachment_blocks_completion_until_accepted(self) -> None:
         self.add_source("mail.md", "see attachment")
         manifest = self.mail_manifest([{"filename": "huge.zip", "skipped": "too_large"}])
