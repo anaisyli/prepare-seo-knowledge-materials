@@ -12,6 +12,8 @@ import unittest
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
+from xml.etree import ElementTree as ET
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,17 @@ def run_script(name: str, *arguments: str) -> subprocess.CompletedProcess[str]:
         text=True,
         encoding="utf-8",
     )
+
+
+def workbook_links(path: Path) -> dict[str, str]:
+    """Map each linked cell on the review sheet to the file it opens."""
+    main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    with zipfile.ZipFile(path) as archive:
+        sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        rels = ET.fromstring(archive.read("xl/worksheets/_rels/sheet1.xml.rels"))
+    targets = {entry.get("Id"): entry.get("Target") for entry in rels}
+    return {link.get("ref"): targets[link.get(f"{rel}id")] for link in sheet.iter(f"{main}hyperlink")}
 
 
 def sha256(path: Path) -> str:
@@ -201,8 +214,8 @@ class PlacementTests(PackageCase):
         self.assertEqual(self.asset("演示.mp4")["path"], "D-待定/产品/X100/演示.mp4")
         tree = (self.package / "原目录对照.md").read_text(encoding="utf-8")
         section = tree.split("## 产品/X100\n", 1)[1].split("## ", 1)[0]
-        self.assertIn("[规格书.docx](<A-原文保留/产品资料/产品/X100/规格书.docx>) → A 原文保留", section)
-        self.assertIn("[演示.mp4](<D-待定/产品/X100/演示.mp4>) → D 待定", section)
+        self.assertIn("[规格书.docx](A-原文保留/产品资料/产品/X100/规格书.docx) → A 原文保留", section)
+        self.assertIn("[演示.mp4](D-待定/产品/X100/演示.mp4) → D 待定", section)
 
     def test_many_pictures_collapse_to_one_line_in_the_tree(self) -> None:
         for n in range(12):
@@ -218,7 +231,7 @@ class PlacementTests(PackageCase):
         self.assert_built_and_verified()
         self.assertEqual(self.asset("7.png")["path"], "A-原文保留/产品资料/产品/X100/渲染图/7.png")
         tree = (self.package / "原目录对照.md").read_text(encoding="utf-8")
-        self.assertIn("（12 张图片）→ A 原文保留 [打开文件夹](<A-原文保留/产品资料/产品/X100/渲染图>)", tree)
+        self.assertIn("（12 张图片）→ A 原文保留 [打开文件夹](A-原文保留/产品资料/产品/X100/渲染图)", tree)
 
     def test_several_input_folders_keep_their_names(self) -> None:
         first, second = self.sources / "官网", self.sources / "客户提供"
@@ -663,7 +676,9 @@ class ReviewRuleTests(PackageCase):
         rows = read_review_rows(self.package / "客户确认表.xlsx")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], "folder:X100/实拍图")
-        self.assertIn("6 个文件", rows[0]["source"])
+        self.assertEqual(rows[0]["source"], "X100/实拍图（文件夹，6 个文件）")
+        links = workbook_links(self.package / "客户确认表.xlsx")
+        self.assertTrue((self.package / unquote(links["C4"])).is_dir(), links)
         self.assertFalse(self.asset("2.jpg")["usable_as_fact"])
         self.assertTrue(self.asset("2.jpg")["pending_client_review"])
 
@@ -911,6 +926,23 @@ class ClientWorkbookTests(PackageCase):
         self.assertIn("contract.pdf", held)
         self.assertIn("财务、合同或账户类资料", held)
 
+    def test_each_row_shows_where_the_file_is_and_opens_it(self) -> None:
+        self.add_source("产品 资料/X100#2/cases.docx", "cases")
+        self.decisions(
+            self.inventory(),
+            {"cases.docx": {"decision": "A", "resource_type": "marketing", "pending_client_review": True}},
+        )
+        self.assert_built_and_verified()
+        workbook = self.package / "客户确认表.xlsx"
+        self.assertEqual(read_review_rows(workbook)[0]["source"], "产品 资料/X100#2/cases.docx")
+        target = workbook_links(workbook)["C4"]
+        self.assertNotIn(" ", target)
+        self.assertNotIn("#", target)
+        self.assertTrue((self.package / unquote(target)).is_file(), target)
+        self.assertEqual(unquote(target), self.asset("cases.docx")["path"])
+        tree = (self.package / "原目录对照.md").read_text(encoding="utf-8")
+        self.assertIn(f"[cases.docx]({target})", tree)
+
     def test_competitor_is_kept_separately_and_not_a_fact(self) -> None:
         self.build_review()
         self.assertEqual(self.asset("rival.pdf")["path"], "A-原文保留/竞对资料/rival.pdf")
@@ -1052,7 +1084,7 @@ class MediaTests(PackageCase):
         self.assert_built_and_verified()
         summary = (self.package / "00_总清单.md").read_text(encoding="utf-8")
         section = summary.split("## 待转写/待看")[1].split("## 超过 50MB")[0]
-        self.assertIn("[training.mp4](<D-待定/training.mp4>) | 视频 | 待转写", section)
+        self.assertIn("[training.mp4](D-待定/training.mp4) | 视频 | 待转写", section)
         self.assertIn("音频 | 待转写", section)
         self.assertIn("图片 | 待看", section)
         self.assertNotIn("signature.png", section)

@@ -10,18 +10,23 @@ from typing import Any
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
+from package_common import link_path
+
 
 WORKBOOK_NAME = "客户确认表.xlsx"
 CHOICES = ("保留", "不用", "需要修改")
 REVIEW_HEADERS = ("序号", "内容摘要", "来自哪个文件", "在文件里的位置", "需要您确认什么", "您的选择", "备注", "编号")
-HELD_HEADERS = ("文件名", "说明")
+HELD_HEADERS = ("文件（在您资料里的位置）", "说明")
 HEADER_ROW = 3
 CHOICE_COLUMN = "F"
 ID_COLUMN = "H"
-REVIEW_WIDTHS = (6, 48, 34, 18, 40, 12, 28, 10)
+REVIEW_WIDTHS = (6, 48, 44, 18, 40, 12, 28, 10)
+SOURCE_COLUMN = 2
 HELD_WIDTHS = (56, 40)
 MAX_ROWS = 5000
 SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+HYPERLINK_TYPE = f"{REL_NS}/hyperlink"
 
 CONTENT_TYPES = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -54,12 +59,13 @@ WORKBOOK_RELS = (
     '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
     "</Relationships>"
 )
-# Style 1: wrapped body. Style 2: header. Style 3: instruction line.
+# Style 1: wrapped body. Style 2: header. Style 3: instruction line. Style 4: link.
 STYLES = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     f'<styleSheet xmlns="{SHEET_NS}">'
-    '<fonts count="2"><font><sz val="11"/><name val="微软雅黑"/></font>'
-    '<font><b/><sz val="11"/><name val="微软雅黑"/></font></fonts>'
+    '<fonts count="3"><font><sz val="11"/><name val="微软雅黑"/></font>'
+    '<font><b/><sz val="11"/><name val="微软雅黑"/></font>'
+    '<font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="微软雅黑"/></font></fonts>'
     '<fills count="3"><fill><patternFill patternType="none"/></fill>'
     '<fill><patternFill patternType="gray125"/></fill>'
     '<fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF4"/></patternFill></fill></fills>'
@@ -67,12 +73,14 @@ STYLES = (
     '<right style="thin"><color rgb="FFC8D0D8"/></right><top style="thin"><color rgb="FFC8D0D8"/></top>'
     '<bottom style="thin"><color rgb="FFC8D0D8"/></bottom></border></borders>'
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-    '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    '<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
     '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1" applyBorder="1">'
     '<alignment vertical="top" wrapText="1"/></xf>'
     '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">'
     '<alignment vertical="center" wrapText="1"/></xf>'
     '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">'
+    '<alignment vertical="top" wrapText="1"/></xf>'
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1">'
     '<alignment vertical="top" wrapText="1"/></xf></cellXfs>'
     "</styleSheet>"
 )
@@ -98,9 +106,17 @@ def cell(column: int, row: int, value: Any, style: int) -> str:
     )
 
 
-def sheet_row(number: int, values: tuple[Any, ...], style: int, height: int | None = None) -> str:
+def sheet_row(
+    number: int,
+    values: tuple[Any, ...],
+    style: int,
+    height: int | None = None,
+    styles: dict[int, int] | None = None,
+) -> str:
     height_attribute = f' ht="{height}" customHeight="1"' if height else ""
-    cells = "".join(cell(index, number, value, style) for index, value in enumerate(values))
+    cells = "".join(
+        cell(index, number, value, (styles or {}).get(index, style)) for index, value in enumerate(values)
+    )
     return f'<row r="{number}"{height_attribute}>{cells}</row>'
 
 
@@ -120,20 +136,28 @@ def worksheet(body: str, widths: tuple[int, ...], freeze_row: int, tail: str, hi
     )
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        f'<worksheet xmlns="{SHEET_NS}">{pane}{columns_xml(widths, hidden or set())}'
+        f'<worksheet xmlns="{SHEET_NS}" xmlns:r="{REL_NS}">{pane}{columns_xml(widths, hidden or set())}'
         f"<sheetData>{body}</sheetData>{tail}</worksheet>"
     )
 
 
-def review_sheet(rows: list[dict[str, Any]], company: str) -> str:
+def review_sheet(rows: list[dict[str, Any]], company: str) -> tuple[str, str]:
+    """Return the sheet and its relationships, which hold the file links."""
     title = f"{company}资料确认表".strip()
-    instruction = "请在“您的选择”一列下拉选择：保留 / 不用 / 需要修改。需要修改或有疑问时，写在“备注”里。"
+    instruction = (
+        "请在“您的选择”一列下拉选择：保留 / 不用 / 需要修改。需要修改或有疑问时，写在“备注”里。"
+        "\n“来自哪个文件”是文件在您资料里的位置；这张表和资料包放在一起时，点蓝色的路径可以直接打开文件。"
+    )
     parts = [
         sheet_row(1, (title,), 3, 24),
-        sheet_row(2, (instruction,), 3, 36),
+        sheet_row(2, (instruction,), 3, 54),
         sheet_row(HEADER_ROW, REVIEW_HEADERS, 2, 28),
     ]
+    links: list[tuple[str, str]] = []
     for number, row in enumerate(rows, start=1):
+        line = HEADER_ROW + number
+        if row.get("link"):
+            links.append((f"{column_name(SOURCE_COLUMN)}{line}", str(row["link"])))
         values = (
             number,
             row.get("summary"),
@@ -144,7 +168,7 @@ def review_sheet(rows: list[dict[str, Any]], company: str) -> str:
             row.get("note", ""),
             row.get("id"),
         )
-        parts.append(sheet_row(HEADER_ROW + number, values, 1))
+        parts.append(sheet_row(line, values, 1, styles={SOURCE_COLUMN: 4} if row.get("link") else None))
     last = HEADER_ROW + max(len(rows), 1)
     merges = '<mergeCells count="2"><mergeCell ref="A1:G1"/><mergeCell ref="A2:G2"/></mergeCells>'
     options = ",".join(CHOICES)
@@ -154,12 +178,26 @@ def review_sheet(rows: list[dict[str, Any]], company: str) -> str:
         f'sqref="{CHOICE_COLUMN}{HEADER_ROW + 1}:{CHOICE_COLUMN}{last}">'
         f'<formula1>"{options}"</formula1></dataValidation></dataValidations>'
     )
-    return worksheet("".join(parts), REVIEW_WIDTHS, HEADER_ROW, merges + validation, {7})
+    hyperlinks = "".join(
+        f'<hyperlink ref="{reference}" r:id="rIdLink{index}"/>' for index, (reference, _) in enumerate(links, 1)
+    )
+    tail = merges + validation + (f"<hyperlinks>{hyperlinks}</hyperlinks>" if links else "")
+    relationships = "".join(
+        f'<Relationship Id="rIdLink{index}" Type="{HYPERLINK_TYPE}" '
+        f'Target="{escape(link_path(target))}" TargetMode="External"/>'
+        for index, (_, target) in enumerate(links, 1)
+    )
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        f"{relationships}</Relationships>"
+    )
+    return worksheet("".join(parts), REVIEW_WIDTHS, HEADER_ROW, tail, {7}), rels
 
 
 def held_sheet(rows: list[dict[str, Any]]) -> str:
     parts = [
-        sheet_row(1, ("这些文件只记录了文件名，没有复制或带走。",), 3, 24),
+        sheet_row(1, ("这些文件只记录了位置和文件名，没有复制或带走。",), 3, 24),
         sheet_row(2, HELD_HEADERS, 2, 28),
     ]
     for number, row in enumerate(rows, start=3):
@@ -181,7 +219,9 @@ def write_workbook(
         archive.writestr("xl/workbook.xml", WORKBOOK)
         archive.writestr("xl/_rels/workbook.xml.rels", WORKBOOK_RELS)
         archive.writestr("xl/styles.xml", STYLES)
-        archive.writestr("xl/worksheets/sheet1.xml", review_sheet(review_rows, company))
+        sheet, links = review_sheet(review_rows, company)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet)
+        archive.writestr("xl/worksheets/_rels/sheet1.xml.rels", links)
         archive.writestr("xl/worksheets/sheet2.xml", held_sheet(held_rows))
 
 

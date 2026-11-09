@@ -11,6 +11,7 @@ import argparse
 import csv
 import json
 import os
+import posixpath
 import shutil
 import sys
 from collections import Counter
@@ -33,6 +34,7 @@ from package_common import (
     load_json_object,
     load_triage,
     expand_triage,
+    link_path,
     long_path,
     make_dirs,
     sanitize_component,
@@ -252,14 +254,14 @@ def normalized_knowledge_points(points: list[dict[str, Any]]) -> list[dict[str, 
 
 
 def relative_link(list_file: str, target: str) -> str:
-    return Path(os.path.relpath(target, os.path.dirname(list_file) or ".")).as_posix()
+    return link_path(Path(os.path.relpath(target, os.path.dirname(list_file) or ".")).as_posix())
 
 
 def file_link(list_file: str, record: dict[str, Any]) -> str:
     name = str(record.get("display_name") or record["item_id"]).replace("|", "/")
     if not record.get("path"):
         return name
-    return f"[{name}](<{relative_link(list_file, record['path'])}>)"
+    return f"[{name}]({relative_link(list_file, record['path'])})"
 
 
 def text_of(item: dict[str, Any] | None, key: str) -> str:
@@ -389,19 +391,40 @@ def write_knowledge_points(
     keep_list(package, "C-知识点/C-清单.md", f"C 类 — 知识点（{len(points)} 条）", rows, generated)
 
 
+def client_place(record: dict[str, Any] | None) -> str:
+    """Where the file sits in the client's own materials, as they know it."""
+    if not record:
+        return ""
+    return str(record.get("source_relpath") or record.get("display_name") or record["item_id"])
+
+
+def package_copy(record: dict[str, Any] | None, by_id: dict[str, dict[str, Any]]) -> str | None:
+    """The file's place in the package, following a duplicate to the copy kept."""
+    while record and not record.get("path") and record.get("duplicate_of"):
+        record = by_id.get(record["duplicate_of"])
+    return record.get("path") if record else None
+
+
 def review_rows(
     records: list[dict[str, Any]],
     triage_items: dict[str, dict[str, Any]],
     points: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """One row per thing the client decides, in the triage's plain wording."""
+    """One row per thing the client decides, in the triage's plain wording.
+
+    Each row names the file by its place in the client's own folders and links
+    to the copy in the package, so it can be opened from the workbook.
+    """
     rows: list[dict[str, Any]] = []
-    names = {record["item_id"]: record.get("display_name") for record in records}
+    by_id = {record["item_id"]: record for record in records}
     asked: set[str] = set()
     group_sizes: dict[str, int] = {}
+    group_copies: dict[str, list[str]] = {}
     for record in records:
         if record.get("pending_client_review") and record.get("review_group"):
             group_sizes[record["review_group"]] = group_sizes.get(record["review_group"], 0) + 1
+            if record.get("path"):
+                group_copies.setdefault(record["review_group"], []).append(record["path"])
     for record in records:
         group = record.get("review_group")
         if record.get("pending_client_review") and group:
@@ -410,11 +433,13 @@ def review_rows(
                 continue
             asked.add(f"folder:{group}")
             entry = triage_items[record["item_id"]]["client_review_items"][0]
+            copies = group_copies.get(group)
             rows.append(
                 {
                     "id": f"folder:{group}",
                     "summary": entry["summary"],
-                    "source": f"{group.split('/')[-1]}（文件夹，{group_sizes[group]} 个文件）",
+                    "source": f"{group}（文件夹，{group_sizes[group]} 个文件）",
+                    "link": posixpath.commonpath([c.rsplit("/", 1)[0] for c in copies]) if copies else None,
                     "location": entry["location"],
                     "question": entry["question"],
                 }
@@ -434,7 +459,8 @@ def review_rows(
                 {
                     "id": f"{record['item_id']}#{index}",
                     "summary": entry.get("summary") or item.get("summary"),
-                    "source": record.get("display_name"),
+                    "source": client_place(record),
+                    "link": package_copy(record, by_id),
                     "location": entry.get("location", "整份文件"),
                     "question": entry.get("question", "这份内容可以使用吗？"),
                 }
@@ -445,7 +471,8 @@ def review_rows(
                 {
                     "id": str(point.get("knowledge_id")),
                     "summary": point.get("knowledge_point"),
-                    "source": names.get(point.get("source_id")),
+                    "source": client_place(by_id.get(str(point.get("source_id")))),
+                    "link": package_copy(by_id.get(str(point.get("source_id"))), by_id),
                     "location": point.get("client_location") or str(point.get("locator", "")).lstrip("# "),
                     "question": point.get("client_question", "这条内容可以使用吗？"),
                 }
@@ -464,7 +491,7 @@ def write_client_review(
     rows = review_rows(records, triage_items, points)
     notes = {"not_copied_restricted": "财务、合同或账户类资料", "withheld_by_client": "您要求不带走"}
     held = [
-        {"name": record.get("display_name"), "note": notes[record["copy_status"]]}
+        {"name": client_place(record), "note": notes[record["copy_status"]]}
         for record in records
         if record.get("copy_status") in notes
     ]
@@ -549,13 +576,13 @@ def write_tree_map(package: Path, records: list[dict[str, Any]], generated: list
             if len(members) >= COLLAPSE_AT and kind in MEDIA_LABELS and copied:
                 target = relative_link(TREE_MAP, copied[0]["path"].rsplit("/", 1)[0])
                 noun = {"image": "张图片", "video": "个视频", "audio": "个音频"}[kind]
-                rows.append(f"- （{len(members)} {noun}）→ {place_label(members[0])} [打开文件夹](<{target}>)")
+                rows.append(f"- （{len(members)} {noun}）→ {place_label(members[0])} [打开文件夹]({target})")
                 continue
             for record in sorted(members, key=lambda m: str(m.get("display_name"))):
                 name = str(record.get("display_name") or record["item_id"]).replace("]", ")")
                 status = STATUS_LABELS.get(str(record.get("copy_status")))
                 if record.get("path"):
-                    rows.append(f"- [{name}](<{relative_link(TREE_MAP, record['path'])}>) → {place_label(record)}")
+                    rows.append(f"- [{name}]({relative_link(TREE_MAP, record['path'])}) → {place_label(record)}")
                 elif record.get("copy_status") == "duplicate":
                     rows.append(f"- {name} → {place_label(record)}，和另一份内容相同，只放了一份")
                 else:

@@ -35,8 +35,9 @@
 - `<标签>` is the fixed Chinese label of the `resource_type`. Competitor material sits in `A-原文保留/竞对资料/`.
 - Every file keeps the sub-folders it had in the source, below its decision folder: `产品/X100/渲染图/1.png` decided A as product lands at `A-原文保留/产品资料/产品/X100/渲染图/1.png`. With several input folders, each input folder's name is the first sub-folder. B, C, and D work the same way.
 - `原目录对照.md` lists the original folders and where each file went. Ten or more media files in one folder with the same decision collapse to one line with a link to their new folder.
+- Links in the lists are relative paths with spaces, brackets, `#`, and `%` percent-escaped and no angle brackets, so Obsidian, VS Code, Typora, and other Markdown viewers all open them. Chinese names stay as they are.
 - Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer, and under 待转写/待看 the video, audio, and images in D, plus A video and audio not yet transcribed.
-- `客户确认表.xlsx` is the only file for the client. One sheet holds everything awaiting a decision, with a dropdown of 保留 / 不用 / 需要修改. The other lists what was recorded but not taken. Its hidden 编号 column links each row back to its item.
+- `客户确认表.xlsx` is the only file for the client. One sheet holds everything awaiting a decision, with a dropdown of 保留 / 不用 / 需要修改. The other lists what was recorded but not taken. Its hidden 编号 column links each row back to its item. 来自哪个文件 shows the file's path in the client's own materials (`source_relpath`) and links to its copy in the package, or to the package folder for a folder row; the links are relative, so they open while the workbook stays in the package.
 - The package is internal and restricted; never forward it whole. Only assets marked `importable: true` go to the next step, and `审计记录/` holds absolute source paths.
 
 ## Inputs to the build

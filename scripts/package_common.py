@@ -184,6 +184,18 @@ def expand_triage(
     return expanded, problems
 
 
+LINK_ESCAPES = {character: f"%{ord(character):02X}" for character in '% #?()<>[]^`{}|"'}
+
+
+def link_path(path: str) -> str:
+    """A relative link that Markdown viewers and Excel can all follow.
+
+    Spaces, brackets, and other characters that end or bend a link are
+    percent-escaped; Chinese names stay readable.
+    """
+    return "".join(LINK_ESCAPES.get(character, character) for character in path)
+
+
 def long_path(path: Path | str, always: bool = False) -> str:
     """Return a path that survives the Windows 260-character limit.
 

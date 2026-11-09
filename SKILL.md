@@ -29,7 +29,7 @@ Keep working files in a directory outside both the sources and the package. Run 
 7. Run `scripts/build_package.py` with `--company` set to the client's name. It copies every file into its folder, keeping the original sub-folders below each A-E folder, and writes `原目录对照.md` showing where each original folder went. It verifies each hash, and writes all lists, the client workbook, and the manifest. Finance, contract, and account items are recorded but not copied unless the run asks for `--include-restricted`. Excluded files are copied too, so a wrong call can be recovered. Use `--withhold` with file names the client does not allow to leave site.
 8. Run `scripts/verify_package.py` with `--extract-status` and, when there are emails, `--mail-candidates`. A run is complete only when it reports `"verified": true`. Fix what it reports and rebuild into a new empty directory; never edit the package by hand to make it pass.
 9. If attachments are missing, report them. Pass `--accept-attachment-gaps` only when the user has accepted the gap, and state in it what actually happened. Never write that the client agreed unless the user said so.
-10. The package holds `客户确认表.xlsx` for the client's post-triage review. Tell the user how many entries await the client, and that only this file goes to the client.
+10. The package holds `客户确认表.xlsx` for the client's post-triage review. Tell the user how many entries await the client, and that only this file goes to the client. When the client returns it filled in, do not rebuild or re-verify the package and do not change these scripts: the package records the screening, and the answers are read in by `compile-enterprise-knowledge` with `apply_answers.py --answers <package>/客户确认表.xlsx`.
 
 ## Decision rules
 
