@@ -31,6 +31,8 @@ Keep working files in a directory outside both the sources and the package. Run 
 9. If attachments are missing, report them. Pass `--accept-attachment-gaps` only when the user has accepted the gap, and state in it what actually happened. Never write that the client agreed unless the user said so.
 10. The package holds `客户确认表.xlsx` for the client's post-triage review. Tell the user how many entries await the client, and that only this file goes to the client. When the client returns it filled in, do not rebuild or re-verify the package and do not change these scripts: the package records the screening, and the answers are read in by `compile-enterprise-knowledge` with `apply_answers.py --answers <package>/客户确认表.xlsx`.
 
+Archives are not unpacked into a package. A ZIP whose every file is already in the package as an ordinary file is left out by the build (`redundant_archive`). When the user wants some archives' contents screened, unpack only the ones holding material for the website or knowledge base, such as pictures, drawings, or specifications, with `scripts/extract_archives.py --source-root <materials> --archive <path below it> --out <new folder> --record <json> --known-package <package>`. SDKs, development kits, and source code stay packed. Then screen the new folder like any input, as a supplementary package beside the main one, and tell the user to give both packages to `compile-enterprise-knowledge`. Never unpack into the sources or into an existing package.
+
 ## Decision rules
 
 - Judge content, not where it appears. A general product fact inside a quotation or order is still a product fact; remove the transaction details around it.

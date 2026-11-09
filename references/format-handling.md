@@ -28,6 +28,10 @@ Website kits, brand folders, and product folders are usually sorted by the compa
 ## Archives
 
 - Do not unpack archives during triage. Record them as D and list their member names when the format allows.
+- The build leaves out a ZIP whose every real file already sits in the package as an ordinary file, and records the member hashes so verification can prove nothing was lost. A ZIP that holds anything else, cannot be read, or awaits the client is kept.
+- To screen what some archives hold, unpack just those with `extract_archives.py` into a new folder. It mirrors each archive's place (`产品/X100/图纸.zip` becomes `产品/X100/图纸/`), skips files the main package already has, system files, and names that would leave the folder, and leaves nested archives packed. ZIP needs nothing extra; RAR and 7z need `--extractor` with Bandizip's `bz.exe` or `7z.exe`. Then inventory, triage, build, and verify that folder as a supplementary package.
+- Choose archives by what they hold. Pictures, detail pages, drawings, and specifications are worth screening; SDKs, driver kits, Android or other source projects, and build outputs are not.
+- Packages built earlier with archive members unpacked under `D-待定/压缩包解压资料/` still verify: each member listed in the manifest is checked against its hash.
 
 ## DOC and DOCX
 

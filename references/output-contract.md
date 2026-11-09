@@ -164,7 +164,8 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 | `decision`, `resource_type`, `pending_client_review`, `business_tags` | Triage result |
 | `pending_units` | Locations held back when only part of the file awaits the client |
 | `path` | Location inside the package, or null |
-| `copy_status` | `copied`, `duplicate`, `not_copied_restricted`, `withheld_by_client`, `not_persisted`, `copy_failed`, `missing_decision` |
+| `copy_status` | `copied`, `duplicate`, `redundant_archive`, `not_copied_restricted`, `withheld_by_client`, `not_persisted`, `copy_failed`, `missing_decision` |
+| `archive_member_hashes` | For a `redundant_archive` ZIP: the hashes of its files, each kept elsewhere in the package |
 | `duplicate_of` | The item holding the same bytes in the same folder |
 | `source_hash`, `output_hash`, `verification_status` | Copy proof |
 | `parent_id` | The email an attachment belongs to |

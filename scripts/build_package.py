@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import posixpath
 import shutil
 import sys
+import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +36,7 @@ from package_common import (
     load_json_object,
     load_triage,
     expand_triage,
+    is_system_file,
     link_path,
     long_path,
     make_dirs,
@@ -231,6 +234,61 @@ def place_items(
         record["verification_status"] = "hash_verified"
         placed[key] = item_id
     return records
+
+
+def zip_member_hashes(path: Path) -> list[str] | None:
+    """SHA-256 of every real file in a ZIP, or None when it cannot be read."""
+    hashes = []
+    try:
+        with zipfile.ZipFile(long_path(path)) as archive:
+            for member in archive.infolist():
+                name = member.filename.replace("\\", "/").rsplit("/", 1)[-1]
+                if member.is_dir() or is_system_file(name):
+                    continue
+                digest = hashlib.sha256()
+                with archive.open(member) as stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(block)
+                hashes.append(digest.hexdigest())
+    except (OSError, zipfile.BadZipFile, RuntimeError, NotImplementedError, ValueError):
+        return None  # Encrypted, damaged, or an unsupported method: keep the archive.
+    return hashes
+
+
+def drop_redundant_archives(package: Path, records: list[dict[str, Any]]) -> int:
+    """Leave out a ZIP whose every file is already in the package as an ordinary file.
+
+    Clients often send a folder and the same folder zipped. Keeping both doubles the
+    package without adding anything. Only ordinary copies count, so a ZIP inside a ZIP
+    keeps the outer one, and anything the client must still decide on is kept.
+    """
+    present = {
+        str(record.get("source_hash")).casefold()
+        for record in records
+        if record.get("copy_status") == "copied" and record.get("asset_kind") != "archive"
+    }
+    dropped = 0
+    for record in records:
+        if (
+            record.get("asset_kind") != "archive"
+            or record.get("copy_status") != "copied"
+            or record.get("pending_client_review")
+            or not str(record.get("path") or "").casefold().endswith(".zip")
+        ):
+            continue
+        members = zip_member_hashes(package / record["path"])
+        if not members or any(member.casefold() not in present for member in members):
+            continue
+        os.remove(long_path(package / record["path"]))
+        record.update(
+            path=None,
+            copy_status="redundant_archive",
+            archive_member_hashes=members,
+            importable=False,
+            usable_as_fact=False,
+        )
+        dropped += 1
+    return dropped
 
 
 def normalized_knowledge_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -544,6 +602,7 @@ STATUS_LABELS = {
     "not_persisted": "没有保存原文",
     "copy_failed": "复制失败",
     "missing_decision": "没有分类",
+    "redundant_archive": "压缩包未保留，内容已有相同散件",
 }
 
 
@@ -719,6 +778,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         args.include_restricted,
         withheld,
     )
+    drop_redundant_archives(package, records)
     for directory in ("A-原文保留", "B-待清理", "C-知识点", "D-待定", "E-排除"):
         (package / directory).mkdir(parents=True, exist_ok=True)
     write_decision_lists(package, records, triage_items, generated)

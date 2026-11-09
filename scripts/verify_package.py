@@ -8,16 +8,20 @@ import json
 import os
 import re
 import sys
+import zipfile
+from xml.etree import ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 from client_review import WORKBOOK_NAME, read_review_rows
+from archive_build_artifacts import REASON, is_build_artifact
 from package_common import (
     AUDIT_DIRECTORY,
     MANIFEST_NAME,
     SCOPES,
     expand_triage,
     is_restricted,
+    is_system_file,
     load_jsonl,
     load_json_object,
     load_triage,
@@ -34,7 +38,7 @@ CASE_ENTRY = re.compile(r"(?i)案例|case|客户|testimonial")
 LOCAL_PATH_PATTERN = re.compile(r"file:///|(?<![A-Za-z0-9])[A-Za-z]:[\\/]")
 UNREADABLE_STATES = {"failed", "needs_ocr", "needs_pdf_reader", "unsupported"}
 COPIED_STATES = {"copied"}
-RECORD_ONLY_STATES = {"not_copied_restricted", "withheld_by_client", "not_persisted", "duplicate"}
+RECORD_ONLY_STATES = {"not_copied_restricted", "withheld_by_client", "not_persisted", "duplicate", "redundant_archive"}
 
 
 WHOLE_ITEM = {"整份文件", "整张图", "全文", "whole file", "整个文件夹"}
@@ -78,6 +82,58 @@ def check_assets(package: Path, assets: list[dict[str, Any]], errors: list[str])
                 errors.append(f"Copied file differs from its source: {item_id}")
         elif status not in RECORD_ONLY_STATES:
             errors.append(f"Item was not placed ({status}): {item_id}")
+    # A ZIP left out because its files are already here needs every one of them kept.
+    hashes = {str(asset.get("source_hash")).casefold() for asset in assets
+              if asset.get("copy_status") == "copied" and asset.get("path") in listed}
+    for asset in assets:
+        if asset.get("copy_status") != "redundant_archive":
+            continue
+        members = asset.get("archive_member_hashes")
+        if asset.get("asset_kind") != "archive" or asset.get("path") or not isinstance(members, list) or not members:
+            errors.append(f"Invalid redundant archive record: {asset.get('item_id')}")
+        elif any(str(member).casefold() not in hashes for member in members):
+            errors.append(f"Archive has a member without a retained copy: {asset.get('item_id')}")
+    return listed
+
+
+def check_archive_expansion(package: Path, manifest: dict[str, Any], errors: list[str]) -> set[str]:
+    """Check archive members unpacked into an earlier package, without making them facts.
+
+    New runs screen unpacked archives as a supplementary package instead; this keeps
+    packages built the earlier way verifiable.
+    """
+    listed: set[str] = set()
+    assets = {str(asset.get("item_id")): asset for asset in manifest.get("assets", [])}
+    for expansion in manifest.get("archive_expansions", []):
+        parent = assets.get(str(expansion.get("parent_id")))
+        if not parent or parent.get("asset_kind") != "archive" or parent.get("source_hash") != expansion.get("archive_hash"):
+            errors.append(f"Archive expansion has an invalid source: {expansion.get('parent_id')}")
+            continue
+        for member in expansion.get("files", []):
+            relative = str(member.get("path") or "")
+            parts = relative.split("/")
+            decision = member.get("decision", "D")
+            expected_folder = {"D": "D-待定", "E": "E-排除"}.get(decision)
+            if len(parts) < 3 or not expected_folder or parts[:2] != [expected_folder, "压缩包解压资料"] or any(part in {"", ".", ".."} or "\\" in part for part in parts):
+                errors.append(f"Invalid archive member path: {relative}")
+                continue
+            if relative in listed:
+                errors.append(f"Duplicate archive member path: {relative}")
+                continue
+            target = package / relative
+            if not Path(long_path(target)).is_file():
+                errors.append(f"Archive member missing: {relative}")
+            elif not member.get("sha256") or sha256_file(target) != member["sha256"]:
+                errors.append(f"Archive member differs: {relative}")
+            elif decision == "E":
+                # Thumbs.db and the like are noise by name; build outputs are checked by header.
+                valid = bool(member.get("reason")) and (
+                    is_system_file(Path(relative).name)
+                    or (member.get("reason") == REASON and is_build_artifact(target, relative))
+                )
+                if not valid:
+                    errors.append(f"Archive member exclusion lacks binary-format evidence: {relative}")
+            listed.add(relative)
     return listed
 
 
@@ -164,7 +220,9 @@ def check_rules(
         if decision in {"A", "B", "C", "E"} and item.get("content_read") is not True:
             errors.append(f"Decided {decision} without reading the content: {item_id}")
         state = (extraction.get(item_id) or {}).get("status")
-        if decision in {"A", "B", "C", "E"} and state in UNREADABLE_STATES:
+        # A system file such as Thumbs.db has no content to read; excluding it needs no reader.
+        system_noise = decision == "E" and is_system_file(str(asset.get("display_name") or ""))
+        if decision in {"A", "B", "C", "E"} and state in UNREADABLE_STATES and not system_noise:
             errors.append(f"Decided {decision} but extraction status is {state}: {item_id}")
 
 
@@ -198,11 +256,32 @@ def check_points(
             errors.append(f"Knowledge point taken from competitor material: {knowledge_id}")
 
 
-def check_local_paths(package: Path, files: set[str], errors: list[str]) -> None:
+def check_local_paths(package: Path, generated_files: list[str], errors: list[str]) -> None:
     """Check generated lists only; source copies are allowed to mention paths."""
-    relatives = [r for r in sorted(files) if r.endswith(("清单.md", "清单.csv", "对照.md", ".jsonl"))]
-    for relative in [*relatives, MANIFEST_NAME]:
-        text = (package / relative).read_text(encoding="utf-8", errors="replace")
+    for relative in [*sorted(generated_files), MANIFEST_NAME]:
+        if not (package / relative).is_file():
+            continue
+        path = package / relative
+        if path.suffix.casefold() == ".xlsx":
+            with zipfile.ZipFile(long_path(path)) as workbook:
+                parts = []
+                for name in workbook.namelist():
+                    if not name.endswith((".xml", ".rels")):
+                        continue
+                    xml = workbook.read(name).decode("utf-8", errors="replace")
+                    if name == "xl/workbook.xml":
+                        root = ET.fromstring(xml)
+                        # Excel adds its last-save directory after the client answers.
+                        # Preserve that returned workbook; inspect visible text and links.
+                        for parent in root.iter():
+                            for child in list(parent):
+                                if child.tag == "{http://schemas.microsoft.com/office/spreadsheetml/2010/11/ac}absPath":
+                                    parent.remove(child)
+                        xml = ET.tostring(root, encoding="unicode")
+                    parts.append(xml)
+                text = "\n".join(parts)
+        else:
+            text = path.read_text(encoding="utf-8", errors="replace")
         if LOCAL_PATH_PATTERN.search(text):
             errors.append(f"Local machine path in {relative}")
 
@@ -260,6 +339,7 @@ def verify(
     check_coverage(inventory_ids, set(triage_items), errors)
 
     listed = check_assets(package, assets, errors)
+    listed.update(check_archive_expansion(package, manifest, errors))
     files = package_files(package)
     expected = listed | set(manifest.get("generated_files", [])) | {MANIFEST_NAME}
     for relative in sorted(files - expected):
@@ -284,7 +364,7 @@ def verify(
             for item_id, headings in load_json_object(messages).items():
                 candidates.setdefault(item_id, set()).update(headings)
     check_points(points, triage_items, mail_ids, candidates, errors)
-    check_local_paths(package, files, errors)
+    check_local_paths(package, manifest.get("generated_files", []), errors)
     check_client_review(package, assets, points, errors)
 
     missing = manifest.get("missing_attachments", [])

@@ -352,6 +352,28 @@ class VerificationGateTests(PackageCase):
         listing.write_text("[x](file:///C:/Users/Someone/Desktop/x.pdf)", encoding="utf-8")
         self.assert_rejected("Local machine path")
 
+    def test_local_machine_path_in_copied_source_jsonl_is_allowed(self) -> None:
+        self.add_source(
+            "triage-results.jsonl",
+            json.dumps({"source": "C:\\Users\\Someone\\Desktop\\x.pdf"}) + "\n",
+        )
+        items = self.inventory()
+        self.decisions(
+            items,
+            {
+                "triage-results.jsonl": {
+                    "decision": "D",
+                    "resource_type": "unknown",
+                    "summary": "The file's meaning needs review.",
+                    "required_follow_up": "Review the file contents.",
+                    "content_read": False,
+                }
+            },
+        )
+        self.assertEqual(self.build().returncode, 0)
+        verified = self.verify()
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+
     def test_item_without_decision_is_rejected(self) -> None:
         self.add_source("a.md", "a")
         self.add_source("b.md", "b")

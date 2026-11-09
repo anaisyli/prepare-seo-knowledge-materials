@@ -108,7 +108,7 @@ E 类默认都复制进 `E-排除/<标签>/`，判错了可以直接捞回来。
 - 不判断客户授权是否合法；
 - 不绕过登录、权限或验证码；
 - 不把单次订单、报价或沟通推广为标准价格、MOQ、交期或保证；
-- 不转写音视频，不解压压缩包；
+- 不转写音视频；压缩包默认不解压；
 - 不写入生产知识库，不写 SEO 文章；
 - 不编辑、覆盖、移动或删除原件。
 
@@ -233,7 +233,8 @@ python scripts/verify_package.py D:\Run\02_初筛包 `
 - **图片：**可查看的尽量查看。从图片提取的知识点也要写适用范围，不从产品外观推断规格。
 - **音视频：**不做转写。整理好的文件夹里的归 A，其余的归 D，都会列在总清单的“待转写/待看”里。视频旁边的 `.srt`、`.vtt` 字幕文件会当作文字读取。
 - **很长的路径：**文件夹套得很深、路径超过 Windows 260 个字符的限制也能正常盘点、复制和校验。
-- **压缩包：**只复制并归 D，不解压。
+- **压缩包：**默认只复制并归 D，不解压。压缩包里的文件如果在资料里都已经有一模一样的散件（常见于客户把同一个文件夹又打包了一份），这个压缩包就不再复制，只登记，原目录对照里写“压缩包未保留，内容已有相同散件”。
+- **想看压缩包里的东西：**只挑里面有图片、详情页、图纸、规格书的压缩包，跟 AI 说“把这几个压缩包解压，筛成补充初筛包”。它会用 `extract_archives.py` 解压到一个新文件夹，资料包里已经有的文件不再重复放，再按正常流程筛成一个小的补充初筛包，建库时和主初筛包一起给。SDK、开发包、源代码这类不用解压。RAR 和 7z 需要电脑上装了 Bandizip 或 7-Zip。
 
 如果无法证明禁止内容已从可见文本、底层文本、备注、隐藏结构和元数据中移除，清理结果不能标记为可导入。
 
@@ -256,15 +257,19 @@ prepare-seo-knowledge-materials/
 │   ├── client_review.py
 │   ├── build_package.py
 │   ├── verify_package.py
+│   ├── extract_archives.py      # 挑出的压缩包解压到新文件夹，筛成补充初筛包
+│   ├── archive_build_artifacts.py  # 校验旧初筛包里解压出的编译产物
 │   ├── package_common.py
 │   └── verify_approved_plan.py
 └── tests/
     ├── test_scripts.py
-    └── test_package.py
+    ├── test_package.py
+    ├── test_archives.py
+    └── test_local_path_scan.py
 ```
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-脚本只依赖 Python 标准库。读取 PDF 文字层需要 `pypdf`，转换 `.xls/.doc/.ppt` 需要 LibreOffice；缺少时对应文件归 D，不会被排除。
+脚本只依赖 Python 标准库。读取 PDF 文字层需要 `pypdf`，转换 `.xls/.doc/.ppt` 需要 LibreOffice；缺少时对应文件归 D，不会被排除。解压 RAR、7z 需要 Bandizip 或 7-Zip，ZIP 不需要。
