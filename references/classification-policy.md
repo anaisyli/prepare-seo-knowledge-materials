@@ -6,6 +6,8 @@ Evaluate the smallest reliable semantic unit available in the source format: par
 
 Do not classify from filenames alone. Filenames may raise risk but cannot establish safe content.
 
+One exception covers media the company sorted itself. In a website kit or a product folder, the folder names say what the images and videos show, so a folder can be judged as a group after looking at samples, through a folder rule. Media in it can be A. Media from emails, chat exports, or loose unsorted folders is judged file by file, and unseen or unheard media there is D. Documents are always judged on their own content. See the format-handling reference.
+
 ## Two classification layers
 
 R0-R4 are content-disposition codes for the smallest reliable semantic units. They are not a severity scale and do not describe the final file operation.

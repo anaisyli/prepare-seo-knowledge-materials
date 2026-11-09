@@ -7,10 +7,11 @@
 ```text
 <package>/
 |-- 00_总清单.md
+|-- 原目录对照.md
 |-- 客户确认表.xlsx
 |-- A-原文保留/
 |   |-- A-清单.md
-|   `-- <标签>/
+|   `-- <标签>/<原来的子文件夹>/
 |-- B-待清理/
 |   `-- B-清单.md
 |-- C-知识点/
@@ -23,7 +24,7 @@
 |-- E-排除/
 |   |-- E-清单.md
 |   |-- E-完整清单.csv
-|   `-- <标签>/
+|   `-- <标签>/<原来的子文件夹>/
 `-- 审计记录/
     |-- package-manifest.json
     |-- inventory.json
@@ -32,7 +33,9 @@
 ```
 
 - `<标签>` is the fixed Chinese label of the `resource_type`. Competitor material sits in `A-原文保留/竞对资料/`.
-- Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer, and under 待转写/待看 the video, audio, and images in D.
+- Every file keeps the sub-folders it had in the source, below its decision folder: `产品/X100/渲染图/1.png` decided A as product lands at `A-原文保留/产品资料/产品/X100/渲染图/1.png`. With several input folders, each input folder's name is the first sub-folder. B, C, and D work the same way.
+- `原目录对照.md` lists the original folders and where each file went. Ten or more media files in one folder with the same decision collapse to one line with a link to their new folder.
+- Images, video, and files of any size go in the folder of their A-E decision. `00_总清单.md` lists files above 50MB, because they affect transfer, and under 待转写/待看 the video, audio, and images in D, plus A video and audio not yet transcribed.
 - `客户确认表.xlsx` is the only file for the client. One sheet holds everything awaiting a decision, with a dropdown of 保留 / 不用 / 需要修改. The other lists what was recorded but not taken. Its hidden 编号 column links each row back to its item.
 - The package is internal and restricted; never forward it whole. Only assets marked `importable: true` go to the next step, and `审计记录/` holds absolute source paths.
 
@@ -40,11 +43,11 @@
 
 ### Inventory
 
-`inventory.json` records every supplied item, including unsupported files. For local files include SHA-256, byte size, media type, `asset_kind`, source reference, and `parent_id` for linked attachments. For connectors use an opaque source reference and stable version/etag/hash when available.
+`inventory.json` records every supplied item, including unsupported files. For local files include SHA-256, byte size, media type, `asset_kind`, source reference, `source_relpath` (the path below the input folder, with `/`), and `parent_id` for linked attachments. For connectors use an opaque source reference and stable version/etag/hash when available.
 
 ### Triage result
 
-Write `triage-results.json`. One object per inventory item; no item may be left out.
+Write `triage-results.json`. One object per inventory item; no item may be left out, except media covered by a folder rule and system files, which the build fills in itself.
 
 ```json
 {
@@ -106,6 +109,31 @@ Required on every item: `item_id`, `decision`, `resource_type`, `content_read`, 
 }
 ```
 - For PDFs add `text_extraction` (`native`, `ocr`, or `mixed`), `ocr_pages`, and `ocr_verification`. Do not persist the OCR transcript.
+- Set `transcript_read: true` on a video or audio item when its transcript or subtitles were actually read. A video or audio attached to an email cannot be A without it.
+
+#### Folder rules
+
+A folder of images, video, or audio that the company organised can be decided as a group. Add `folder_rules` beside `items`:
+
+```json
+{
+  "folder_rules": [
+    {
+      "folder": "建站资料/X100/产品视频",
+      "decision": "A",
+      "resource_type": "product",
+      "summary": "X100 的产品介绍视频",
+      "checked_samples": ["建站资料/X100/产品视频/01-外观.mp4", "建站资料/X100/产品视频/03-安装.mp4"]
+    }
+  ]
+}
+```
+
+- `folder` is a `source_relpath` folder. The rule covers every image, video, and audio file below it that has no decision of its own; the deepest matching rule wins. Documents in the folder always need their own decision.
+- A and E rules need `checked_samples`: files inside that folder that were actually looked at. E rules also need `reason_codes`. A D rule needs neither.
+- A rule may set `decision`, `resource_type`, `summary`, `reason_codes`, `business_tags`, and `required_follow_up`.
+- When the client must decide about the whole folder, such as photos taken at customer sites that show their logos, add `pending_client_review: true` to an A rule, and optionally a plain `client_question`. `客户确认表.xlsx` then gets one row for the folder, with the rule's `summary` and the number of files, instead of one row per picture. Its 编号 is `folder:<folder>`, and the client's answer applies to every file the rule covers. Until then none of them is usable as a fact.
+- System files (`Thumbs.db`, `ehthumbs.db`, `.DS_Store`, `desktop.ini`, and names starting with `~$` or `._`) without a decision become E with `reason_codes: ["system_file"]`.
 
 ### Knowledge points
 
@@ -139,6 +167,10 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 | `duplicate_of` | The item holding the same bytes in the same folder |
 | `source_hash`, `output_hash`, `verification_status` | Copy proof |
 | `parent_id` | The email an attachment belongs to |
+| `source_relpath` | Path below the input folder; the package keeps these sub-folders |
+| `transcript_read` | Video or audio whose transcript or subtitles were read |
+| `review_group`, `review_question` | The folder whose single client question covers this file, and that question |
+| `folder_rule` | The folder rule that decided this file, when one did |
 | `large_file` | Above 50MB; listed in `00_总清单.md` |
 | `importable` | True only for A items not restricted or withheld |
 | `usable_as_fact` | True for A items, except competitor, SEO-operations, restricted, and wholly pending items. With `pending_units`, those locations stay held back |
@@ -158,6 +190,7 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 - an email was excluded without `mail_review`;
 - a quotation with product content was excluded as pricing or hidden as finance, a finance-named file was kept as A or B, or a non-finance item is restricted;
 - a B item has no exact location;
+- a folder rule has no checked samples inside its folder, or a video or audio from an email is A without `transcript_read`;
 - customer cases were not sent for client review, or a partial question holds back the whole file;
 - a knowledge point from one email is marked `general`, contains a price, or does not cite a company message;
 - a knowledge point has no valid source, locator, or scope, or comes from competitor material;

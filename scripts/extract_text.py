@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
-from package_common import load_json_object, write_json_file
+from package_common import load_json_object, long_path, write_json_file
 
 
 WORD = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -244,7 +244,7 @@ def main() -> int:
         item_id = item["item_id"]
         try:
             result = read_item(
-                Path(item["source_ref"]), item.get("extension") or "", work, args.timeout
+                Path(long_path(item["source_ref"])), item.get("extension") or "", work, args.timeout
             )
         except LookupError as exc:
             result = {"status": str(exc.args[0]), "characters": 0}

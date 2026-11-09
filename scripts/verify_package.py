@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ from package_common import (
     AUDIT_DIRECTORY,
     MANIFEST_NAME,
     SCOPES,
+    expand_triage,
     is_restricted,
     load_jsonl,
     load_json_object,
@@ -35,15 +37,19 @@ COPIED_STATES = {"copied"}
 RECORD_ONLY_STATES = {"not_copied_restricted", "withheld_by_client", "not_persisted", "duplicate"}
 
 
-WHOLE_ITEM = {"整份文件", "整张图", "全文", "whole file"}
+WHOLE_ITEM = {"整份文件", "整张图", "全文", "whole file", "整个文件夹"}
 
 
 def package_files(package: Path) -> set[str]:
-    return {
-        path.relative_to(package).as_posix()
-        for path in package.rglob("*")
-        if path.is_file() and path.relative_to(package).parts[0] != AUDIT_DIRECTORY
-    }
+    root = long_path(package, always=True)
+    found = set()
+    for current, _, names in os.walk(root):
+        folder = os.path.relpath(current, root)
+        for name in names:
+            relative = Path(folder, name).as_posix() if folder != "." else name
+            if relative.split("/")[0] != AUDIT_DIRECTORY:
+                found.add(relative)
+    return found
 
 
 def check_coverage(
@@ -148,6 +154,13 @@ def check_rules(
             errors.append(f"Email excluded without reviewing its content: {item_id}")
         if decision == "E" and not [c for c in item.get("reason_codes", []) if c not in {"E", ""}]:
             errors.append(f"E item has no real reason code: {item_id}")
+        if (
+            decision == "A"
+            and asset.get("asset_kind") in {"video", "audio"}
+            and asset.get("parent_id")
+            and item.get("transcript_read") is not True
+        ):
+            errors.append(f"Video or audio from an email kept as A before anyone heard it: {item_id}")
         if decision in {"A", "B", "C", "E"} and item.get("content_read") is not True:
             errors.append(f"Decided {decision} without reading the content: {item_id}")
         state = (extraction.get(item_id) or {}).get("status")
@@ -187,7 +200,7 @@ def check_points(
 
 def check_local_paths(package: Path, files: set[str], errors: list[str]) -> None:
     """Check generated lists only; source copies are allowed to mention paths."""
-    relatives = [r for r in sorted(files) if r.endswith(("清单.md", "清单.csv", ".jsonl"))]
+    relatives = [r for r in sorted(files) if r.endswith(("清单.md", "清单.csv", "对照.md", ".jsonl"))]
     for relative in [*relatives, MANIFEST_NAME]:
         text = (package / relative).read_text(encoding="utf-8", errors="replace")
         if LOCAL_PATH_PATTERN.search(text):
@@ -207,14 +220,20 @@ def check_client_review(
         return
     rows = read_review_rows(path)
     listed = {str(row["id"]).split("#")[0] for row in rows}
-    expected = {
-        str(a["item_id"])
-        for a in assets
-        if a.get("pending_client_review") and a.get("copy_status") != "duplicate"
-    }
-    expected |= {str(p.get("knowledge_id")) for p in points if p.get("pending_client_review")}
-    for missing in sorted(expected - listed):
-        errors.append(f"Awaiting the client but not in the workbook: {missing}")
+    # The same file in two folders is asked once, under either copy.
+    content = {str(a["item_id"]): str(a.get("source_hash") or a["item_id"]) for a in assets}
+    listed_content = {content.get(item_id, item_id) for item_id in listed}
+    for asset in assets:
+        group = asset.get("review_group")
+        if asset.get("pending_client_review") and group:
+            if f"folder:{group}" not in listed:
+                errors.append(f"Folder awaiting the client but not in the workbook: {group}")
+        elif asset.get("pending_client_review") and asset.get("copy_status") != "duplicate":
+            if content[str(asset["item_id"])] not in listed_content:
+                errors.append(f"Awaiting the client but not in the workbook: {asset['item_id']}")
+    for point in points:
+        if point.get("pending_client_review") and str(point.get("knowledge_id")) not in listed:
+            errors.append(f"Awaiting the client but not in the workbook: {point.get('knowledge_id')}")
     for row in rows:
         if not row["summary"].strip() or not row["question"].strip():
             errors.append(f"Workbook row has no summary or question: {row['id']}")
@@ -231,6 +250,8 @@ def verify(
     assets = manifest.get("assets", [])
     inventory = load_json_object(package / AUDIT_DIRECTORY / "inventory.json")
     header, raw_items = load_triage(package / AUDIT_DIRECTORY / "triage-results.json")
+    raw_items, problems = expand_triage(header, raw_items, inventory.get("items", []))
+    errors.extend(problems)
     triage_items = {item["item_id"]: item for item in raw_items}
     inventory_ids = {item["item_id"] for item in inventory.get("items", [])}
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import re
 import subprocess
 import sys
@@ -17,6 +19,7 @@ SCRIPTS = SKILL_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from client_review import read_review_rows  # noqa: E402
+from package_common import long_path  # noqa: E402
 
 SCOPE = {
     "confirmed": True,
@@ -44,6 +47,8 @@ class PackageCase(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
+        # Runs first: the plain cleanup cannot remove folders past the path limit.
+        self.addCleanup(shutil.rmtree, long_path(temporary.name, always=True), True)
         self.root = Path(temporary.name)
         self.sources = self.root / "sources"
         self.sources.mkdir()
@@ -51,8 +56,9 @@ class PackageCase(unittest.TestCase):
 
     def add_source(self, name: str, content: bytes | str = b"content") -> Path:
         path = self.sources / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content.encode("utf-8") if isinstance(content, str) else content)
+        os.makedirs(long_path(path.parent), exist_ok=True)
+        with open(long_path(path), "wb") as handle:
+            handle.write(content.encode("utf-8") if isinstance(content, str) else content)
         return path
 
     def inventory(self, *extra: str) -> dict[str, dict[str, Any]]:
@@ -174,8 +180,65 @@ class PlacementTests(PackageCase):
             json.dumps({"scope_confirmation": SCOPE, "items": records}), encoding="utf-8"
         )
         self.assert_built_and_verified()
-        texts = sorted(p.read_text() for p in (self.package / "E-排除" / "无知识价值").glob("report*"))
-        self.assertEqual(texts, ["first", "second"])
+        folder = self.package / "E-排除" / "无知识价值"
+        self.assertEqual((folder / "one" / "report.pdf").read_text(), "first")
+        self.assertEqual((folder / "two" / "report.pdf").read_text(), "second")
+
+    def test_original_folders_are_kept_inside_each_class(self) -> None:
+        self.add_source("产品/X100/规格书.docx", "spec")
+        self.add_source("产品/X100/渲染图/1.png", "render")
+        self.add_source("产品/X100/演示.mp4", "video")
+        items = self.inventory()
+        self.assertEqual(items["规格书.docx"]["source_relpath"], "产品/X100/规格书.docx")
+        self.decisions(items, {
+            "规格书.docx": {"decision": "A", "resource_type": "product"},
+            "1.png": {"decision": "A", "resource_type": "product"},
+            "演示.mp4": {"decision": "D", "resource_type": "unknown", "content_read": False},
+        })
+        self.assert_built_and_verified()
+        self.assertEqual(self.asset("规格书.docx")["path"], "A-原文保留/产品资料/产品/X100/规格书.docx")
+        self.assertEqual(self.asset("1.png")["path"], "A-原文保留/产品资料/产品/X100/渲染图/1.png")
+        self.assertEqual(self.asset("演示.mp4")["path"], "D-待定/产品/X100/演示.mp4")
+        tree = (self.package / "原目录对照.md").read_text(encoding="utf-8")
+        section = tree.split("## 产品/X100\n", 1)[1].split("## ", 1)[0]
+        self.assertIn("[规格书.docx](<A-原文保留/产品资料/产品/X100/规格书.docx>) → A 原文保留", section)
+        self.assertIn("[演示.mp4](<D-待定/产品/X100/演示.mp4>) → D 待定", section)
+
+    def test_many_pictures_collapse_to_one_line_in_the_tree(self) -> None:
+        for n in range(12):
+            self.add_source(f"产品/X100/渲染图/{n}.png", f"render {n}")
+        self.add_source("产品/X100/规格书.docx", "spec")
+        rule = {"folder": "产品/X100/渲染图", "decision": "A", "resource_type": "product", "summary": "X100 渲染图", "checked_samples": ["产品/X100/渲染图/0.png", "产品/X100/渲染图/5.png"]}
+        items = self.inventory()
+        triage = {"scope_confirmation": SCOPE, "folder_rules": [rule], "items": [
+            {"item_id": items["规格书.docx"]["item_id"], "decision": "A", "resource_type": "product", "summary": "规格书", "content_read": True}
+        ]}
+        self.triage_path = self.root / "triage-results.json"
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        self.assert_built_and_verified()
+        self.assertEqual(self.asset("7.png")["path"], "A-原文保留/产品资料/产品/X100/渲染图/7.png")
+        tree = (self.package / "原目录对照.md").read_text(encoding="utf-8")
+        self.assertIn("（12 张图片）→ A 原文保留 [打开文件夹](<A-原文保留/产品资料/产品/X100/渲染图>)", tree)
+
+    def test_several_input_folders_keep_their_names(self) -> None:
+        first, second = self.sources / "官网", self.sources / "客户提供"
+        (first / "a").mkdir(parents=True)
+        (second / "a").mkdir(parents=True)
+        (first / "a" / "x.md").write_text("1", encoding="utf-8")
+        (second / "a" / "x.md").write_text("2", encoding="utf-8")
+        self.inventory_path = self.root / "inventory.json"
+        done = run_script("inventory_materials.py", str(first), str(second), "--output", str(self.inventory_path))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        items = json.loads(self.inventory_path.read_text(encoding="utf-8"))["items"]
+        self.assertEqual(sorted(i["source_relpath"] for i in items), ["官网/a/x.md", "客户提供/a/x.md"])
+
+    def test_paths_beyond_the_windows_limit_still_work(self) -> None:
+        deep = "/".join(["很长的产品资料文件夹名称用来测试路径长度限制"] * 12)
+        source = self.add_source(f"{deep}/规格书.docx", "spec")
+        self.assertGreater(len(str(source)), 300)
+        self.decisions(self.inventory(), {"规格书.docx": {"decision": "A", "resource_type": "product"}})
+        self.assert_built_and_verified()
+        self.assertTrue(self.asset("规格书.docx")["path"].endswith(f"{deep}/规格书.docx"))
 
     def test_category_with_slash_does_not_create_nested_folders(self) -> None:
         self.add_source("doc.md", "x")
@@ -550,6 +613,94 @@ class ReviewRuleTests(PackageCase):
         self.assertEqual(verified.returncode, 2)
         self.assertIn("cannot be general", verified.stdout)
 
+    def test_folder_rule_needs_samples_and_covers_only_media(self) -> None:
+        self.add_source("产品/图/1.png", "a")
+        self.add_source("产品/图/说明.docx", "b")
+        items = self.inventory()
+        rule = {"folder": "产品/图", "decision": "A", "resource_type": "product", "summary": "产品图"}
+        triage = {"scope_confirmation": SCOPE, "folder_rules": [rule], "items": []}
+        self.triage_path = self.root / "triage-results.json"
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        built = self.build()
+        self.assertEqual(built.returncode, 2)
+        self.assertIn("checked samples", built.stderr)
+        rule["checked_samples"] = ["产品/图/1.png"]
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.build().returncode, 1)
+        self.assertEqual(self.asset("1.png")["copy_status"], "copied")
+        self.assertEqual(self.asset("说明.docx")["copy_status"], "missing_decision")
+
+    def test_organised_product_videos_are_kept_as_a_and_wait_for_transcription(self) -> None:
+        for n in range(3):
+            self.add_source(f"建站资料/X100/产品视频/{n}.mp4", f"video {n}")
+        items = self.inventory()
+        rule = {
+            "folder": "建站资料/X100/产品视频", "decision": "A", "resource_type": "product",
+            "summary": "X100 产品视频", "checked_samples": ["建站资料/X100/产品视频/0.mp4"],
+        }
+        triage = {"scope_confirmation": SCOPE, "folder_rules": [rule], "items": []}
+        self.triage_path = self.root / "triage-results.json"
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        self.assert_built_and_verified()
+        self.assertEqual(self.asset("1.mp4")["path"], "A-原文保留/产品资料/建站资料/X100/产品视频/1.mp4")
+        summary = (self.package / "00_总清单.md").read_text(encoding="utf-8")
+        self.assertEqual(summary.count("已保留，内容待转写"), 3)
+
+    def test_folder_of_site_photos_is_one_question_for_the_client(self) -> None:
+        for n in range(5):
+            self.add_source(f"X100/实拍图/{n}.jpg", f"photo {n}")
+        self.add_source("X100/实拍图/4-copy.jpg", "photo 4")
+        items = self.inventory()
+        rule = {
+            "folder": "X100/实拍图", "decision": "A", "resource_type": "product",
+            "summary": "X100 装在客户现场的照片，能看到客户的标志",
+            "checked_samples": ["X100/实拍图/0.jpg"], "pending_client_review": True,
+        }
+        triage = {"scope_confirmation": SCOPE, "folder_rules": [rule], "items": []}
+        self.triage_path = self.root / "triage-results.json"
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        self.assert_built_and_verified()
+        rows = read_review_rows(self.package / "客户确认表.xlsx")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], "folder:X100/实拍图")
+        self.assertIn("6 个文件", rows[0]["source"])
+        self.assertFalse(self.asset("2.jpg")["usable_as_fact"])
+        self.assertTrue(self.asset("2.jpg")["pending_client_review"])
+
+        rule["decision"] = "D"
+        self.triage_path.write_text(json.dumps(triage, ensure_ascii=False), encoding="utf-8")
+        shutil.rmtree(self.package)
+        built = self.build()
+        self.assertEqual(built.returncode, 2)
+        self.assertIn("needs decision A", built.stderr)
+
+    def test_video_from_an_email_is_not_a_until_someone_heard_it(self) -> None:
+        mail = self.add_source("mail.md", "See the video.")
+        clip = self.add_source("clip.mp4", "video")
+        manifest = self.root / "raw.json"
+        manifest.write_text(json.dumps({"results": [{
+            "body_path": str(mail), "attachments": [{"filename": "clip.mp4", "saved_to": str(clip)}],
+        }]}), encoding="utf-8")
+        items = self.inventory("--mail-manifest", str(manifest))
+        self.assertTrue(items["clip.mp4"].get("parent_id"))
+        self.decisions(items, {"clip.mp4": {"decision": "A", "resource_type": "product"}})
+        self.assertEqual(self.build().returncode, 0)
+        self.assertIn("before anyone heard it", self.verify().stdout)
+        shutil.rmtree(self.package)
+        self.decisions(items, {"clip.mp4": {"decision": "A", "resource_type": "product", "transcript_read": True}})
+        self.assert_built_and_verified()
+
+    def test_system_files_are_excluded_without_a_decision(self) -> None:
+        self.add_source("产品/Thumbs.db", "x")
+        self.add_source("产品/.DS_Store", "y")
+        self.add_source("产品/~$规格书.docx", "z")
+        self.inventory()
+        self.triage_path = self.root / "triage-results.json"
+        self.triage_path.write_text(json.dumps({"scope_confirmation": SCOPE, "items": []}), encoding="utf-8")
+        self.assert_built_and_verified()
+        self.assertEqual({a["decision"] for a in self.manifest()["assets"]}, {"E"})
+        self.assertEqual(self.asset("Thumbs.db")["path"], "E-排除/无知识价值/产品/Thumbs.db")
+
     def test_repeated_file_gets_one_row_for_the_client(self) -> None:
         self.add_source("one/profile.pdf", "same")
         self.add_source("two/profile.pdf", "same")
@@ -901,9 +1052,9 @@ class MediaTests(PackageCase):
         self.assert_built_and_verified()
         summary = (self.package / "00_总清单.md").read_text(encoding="utf-8")
         section = summary.split("## 待转写/待看")[1].split("## 超过 50MB")[0]
-        self.assertIn("[training.mp4](<D-待定/training.mp4>) | 视频，待转写", section)
-        self.assertIn("音频，待转写", section)
-        self.assertIn("图片，待看", section)
+        self.assertIn("[training.mp4](<D-待定/training.mp4>) | 视频 | 待转写", section)
+        self.assertIn("音频 | 待转写", section)
+        self.assertIn("图片 | 待看", section)
         self.assertNotIn("signature.png", section)
 
     def test_summary_says_when_nothing_waits(self) -> None:

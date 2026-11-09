@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from package_common import asset_kind
+from package_common import asset_kind, long_path, plain_path
 
 
 # Text an exporter leaves in a mail file when it did not save the attachments.
@@ -76,7 +76,7 @@ MIME_OVERRIDES = {
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with open(long_path(path), "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -87,15 +87,16 @@ def normalized_key(path: Path) -> str:
 
 
 def is_link_like(path: Path) -> bool:
-    if path.is_symlink():
+    if os.path.islink(long_path(path)):
         return True
     is_junction = getattr(path, "is_junction", None)
     return bool(is_junction and is_junction())
 
 
 def walk_directory(root: Path) -> Iterable[Path]:
-    for current, directory_names, file_names in os.walk(root, followlinks=False):
-        current_path = Path(current)
+    # The long-path form reaches files deeper than Windows' 260-character limit.
+    for current, directory_names, file_names in os.walk(long_path(root, always=True), followlinks=False):
+        current_path = Path(plain_path(current))
         directory_names[:] = sorted(
             name
             for name in directory_names
@@ -143,7 +144,7 @@ def collect_files(inputs: list[str], output_path: Path | None) -> tuple[list[Pat
 def inventory_item(path: Path) -> dict[str, object]:
     extension = path.suffix.casefold()
     try:
-        size = path.stat().st_size
+        size = os.stat(long_path(path)).st_size
         content_hash = sha256_file(path)
         path_hash = hashlib.sha256(normalized_key(path).encode("utf-8")).hexdigest()
         item_id = f"local-{content_hash[:12]}-{path_hash[:8]}"
@@ -308,6 +309,22 @@ def catalog_markdown(items: list[dict[str, object]], roots: list[str]) -> str:
     return "\n".join(lines)
 
 
+def add_relative_paths(items: list[dict[str, object]], inputs: list[str]) -> None:
+    """Record where each file sat in the supplied folders, so the layout survives packaging."""
+    roots = [Path(raw).expanduser().resolve() for raw in inputs]
+    folders = [root for root in roots if root.is_dir()]
+    for item in items:
+        path = Path(str(item["source_ref"]))
+        relative = Path(path.name)
+        for root in folders:
+            if path.is_relative_to(root):
+                relative = path.relative_to(root)
+                if len(folders) > 1:
+                    relative = Path(root.name) / relative
+                break
+        item["source_relpath"] = relative.as_posix()
+
+
 def write_json_atomic(destination: Path, value: dict[str, object]) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
@@ -347,6 +364,7 @@ def main() -> int:
     output_path = Path(args.output).expanduser().resolve()
     files, warnings = collect_files(args.inputs, output_path)
     items = [inventory_item(path) for path in files]
+    add_relative_paths(items, args.inputs)
     missing = []
     filtered = [0]
     if args.mail_manifest:

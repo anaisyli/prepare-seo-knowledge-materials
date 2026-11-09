@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from package_common import load_json_object, write_json_file
+from package_common import load_json_object, long_path, write_json_file
 
 
 KNOWLEDGE_TERMS = re.compile(
@@ -136,7 +136,7 @@ def main() -> int:
         if not item.get("is_mail"):
             continue
         try:
-            text = Path(item["source_ref"]).read_text(encoding="utf-8", errors="replace")
+            text = Path(long_path(item["source_ref"])).read_text(encoding="utf-8", errors="replace")
         except OSError:
             read_errors.append(item["item_id"])
             continue

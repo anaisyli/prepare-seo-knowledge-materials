@@ -9,9 +9,20 @@ Use structured parsers and format-aware editing. Extract text for judgment, but 
 - Look at images when you can. A product or catalog image is A or D by what it shows; a signature, logo, or screenshot of a chat is E noise.
 - A knowledge point read from an image states its `scope` like any other. Do not infer specifications or capabilities from how a product looks.
 
+## Organised media folders
+
+Website kits, brand folders, and product folders are usually sorted by the company: `X100/产品视频/`, `官网/首页Banner/`. Their folder and file names already say what the media shows.
+
+- Judge such a folder with a folder rule after looking at a few samples. Images and video in it can be A without each being opened. See the folder rules in the output contract.
+- Look at enough samples to cover the folder: at least two, and one from each sub-folder the rule covers. For video, check that the file names and a frame or the poster image, when one can be seen, match the folder.
+- Video and audio kept this way are A, and `00_总清单.md` still lists them under 待转写/待看 as 已保留，内容待转写. What they say is not yet knowledge: no knowledge point comes from them until a transcript or subtitles are read.
+- When the samples show customers' sites, logos, or faces, keep the folder A and send it to the client as one question with `pending_client_review: true` on the rule.
+- This is only for folders the company sorted. Media from email attachments, chat exports, phone dumps, or a loose folder of unnamed files stays D until someone looks at or listens to it.
+
 ## Video and audio
 
-- Record them as D. They are not transcribed during triage; state in `required_follow_up` that transcription is pending. `00_总清单.md` lists them under 待转写/待看.
+- Outside an organised folder, record them as D. They are not transcribed during triage; state in `required_follow_up` that transcription is pending. `00_总清单.md` lists them under 待转写/待看.
+- A video or audio attached to an email is A only when its transcript or subtitles were read; set `transcript_read: true`.
 - Read a `.srt` or `.vtt` file beside a video as text. It can settle the video's content without transcription.
 
 ## Archives

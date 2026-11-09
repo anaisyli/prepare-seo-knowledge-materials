@@ -32,7 +32,9 @@ from package_common import (
     load_jsonl,
     load_json_object,
     load_triage,
+    expand_triage,
     long_path,
+    make_dirs,
     sanitize_component,
     sha256_file,
     usable_as_fact,
@@ -53,7 +55,7 @@ DECISION_LABELS = {
     "D": "待定",
     "E": "排除",
 }
-MEDIA_LABELS = {"video": "视频，待转写", "audio": "音频，待转写", "image": "图片，待看"}
+MEDIA_LABELS = {"video": "视频", "audio": "音频", "image": "图片"}
 SCOPE_LABELS = {"general": "通用", "style": "某个款式", "single_communication": "某次沟通"}
 
 
@@ -89,9 +91,15 @@ def unique_destination(package: Path, directory: str, name: str, taken: set[str]
     return candidate
 
 
+def keep_folders(relpath: str) -> str:
+    """The original sub-folders of a file, made safe as package path components."""
+    parts = [part for part in str(relpath).replace("\\", "/").split("/")[:-1] if part not in {"", ".", ".."}]
+    return "/".join(sanitize_component(part, "folder") for part in parts)
+
+
 def copy_verified(source: Path, destination: Path, expected_hash: str | None) -> str:
     """Copy through a temporary name so a failed copy never looks finished."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    make_dirs(destination.parent)
     temporary = destination.with_name(f".{destination.name}.part")
     shutil.copyfile(long_path(source), long_path(temporary))
     output_hash = sha256_file(temporary)
@@ -125,6 +133,13 @@ def base_record(
         "source_hash": (inventory_item or {}).get("source_hash"),
         "byte_size": (inventory_item or {}).get("byte_size"),
         "parent_id": (inventory_item or {}).get("parent_id"),
+        "source_relpath": (inventory_item or {}).get("source_relpath"),
+        "transcript_read": item.get("transcript_read") is True,
+        "review_group": item.get("review_group"),
+        "review_question": (item.get("client_review_items") or [{}])[0].get("question")
+        if item.get("review_group") else None,
+        # Judged with its folder from samples, so the next step files it as material, not a document.
+        "folder_rule": item.get("from_folder_rule"),
         "path": None,
         "importable": decision == "A" and not is_restricted(item),
         "usable_as_fact": usable_as_fact(item),
@@ -181,6 +196,9 @@ def place_items(
         source = Path(source_ref)
         expected = inventory_item.get("source_hash")
         directory = target_directory(item)
+        folders = keep_folders(str(inventory_item.get("source_relpath") or ""))
+        if folders:
+            directory = f"{directory}/{folders}"
         record["large_file"] = size > LARGE_FILE_BYTES
 
         key = (expected or item_id, directory)
@@ -191,7 +209,7 @@ def place_items(
             continue
 
         try:
-            if not source.is_file() or source.is_symlink():
+            if not os.path.isfile(long_path(source)) or os.path.islink(long_path(source)):
                 raise BuildError("source_missing")
             if expected and sha256_file(source).casefold() != expected.casefold():
                 raise BuildError("source_changed")
@@ -379,10 +397,36 @@ def review_rows(
     """One row per thing the client decides, in the triage's plain wording."""
     rows: list[dict[str, Any]] = []
     names = {record["item_id"]: record.get("display_name") for record in records}
+    asked: set[str] = set()
+    group_sizes: dict[str, int] = {}
     for record in records:
-        # A repeated file was already listed; the client should not answer twice.
+        if record.get("pending_client_review") and record.get("review_group"):
+            group_sizes[record["review_group"]] = group_sizes.get(record["review_group"], 0) + 1
+    for record in records:
+        group = record.get("review_group")
+        if record.get("pending_client_review") and group:
+            # A folder judged as a group is one question for the client.
+            if f"folder:{group}" in asked:
+                continue
+            asked.add(f"folder:{group}")
+            entry = triage_items[record["item_id"]]["client_review_items"][0]
+            rows.append(
+                {
+                    "id": f"folder:{group}",
+                    "summary": entry["summary"],
+                    "source": f"{group.split('/')[-1]}（文件夹，{group_sizes[group]} 个文件）",
+                    "location": entry["location"],
+                    "question": entry["question"],
+                }
+            )
+            continue
+        # The same file in two folders is one question for the client.
         if not record.get("pending_client_review") or record.get("copy_status") == "duplicate":
             continue
+        content = str(record.get("source_hash") or record["item_id"])
+        if content in asked:
+            continue
+        asked.add(content)
         item = triage_items[record["item_id"]]
         entries = item.get("client_review_items") or [{}]
         for index, entry in enumerate(entries, start=1):
@@ -430,23 +474,94 @@ def write_client_review(
 
 
 def media_section(records: list[dict[str, Any]]) -> list[str]:
-    """Gather the audio, video, and unseen images, so they are not lost among D items."""
+    """Gather media whose content nobody has taken in yet, so it is not lost.
+
+    D media still needs a look. A video and audio are kept, judged by their
+    folder, and their spoken content can still add knowledge once transcribed.
+    """
     waiting = [
         record
         for record in records
-        if record.get("decision") == "D"
+        if record.get("copy_status") == "copied"
         and record.get("asset_kind") in MEDIA_LABELS
-        and record.get("copy_status") == "copied"
+        and (
+            record.get("decision") == "D"
+            or (
+                record.get("decision") == "A"
+                and record.get("asset_kind") in {"video", "audio"}
+                and not record.get("transcript_read")
+            )
+        )
     ]
     rows = ["## 待转写/待看", ""]
     if not waiting:
         return [*rows, "无", ""]
-    rows += ["| 文件 | 类型 | 大小 |", "|---|---|---|"]
-    for record in sorted(waiting, key=lambda entry: (entry["asset_kind"], str(entry.get("display_name")))):
+    rows += ["| 文件 | 类型 | 现在 | 大小 |", "|---|---|---|---|"]
+    order = lambda entry: (entry.get("decision"), entry["asset_kind"], str(entry.get("display_name")))
+    for record in sorted(waiting, key=order):
         size = (record.get("byte_size") or 0) / (1024 * 1024)
         link = file_link("00_总清单.md", record)
-        rows.append(f"| {link} | {MEDIA_LABELS[record['asset_kind']]} | {size:.1f} MB |")
+        if record.get("decision") == "A":
+            state = "已保留，内容待转写"
+        else:
+            state = "待看" if record["asset_kind"] == "image" else "待转写"
+        rows.append(f"| {link} | {MEDIA_LABELS[record['asset_kind']]} | {state} | {size:.1f} MB |")
     return [*rows, ""]
+
+
+TREE_MAP = "原目录对照.md"
+COLLAPSE_AT = 10
+STATUS_LABELS = {
+    "not_copied_restricted": "只登记，没有复制",
+    "withheld_by_client": "客户不让带走",
+    "not_persisted": "没有保存原文",
+    "copy_failed": "复制失败",
+    "missing_decision": "没有分类",
+}
+
+
+def place_label(record: dict[str, Any]) -> str:
+    decision = record.get("decision")
+    label = DECISION_LABELS.get(str(decision), "未分类")
+    return f"{decision} {label}" if decision else label
+
+
+def write_tree_map(package: Path, records: list[dict[str, Any]], generated: list[str]) -> None:
+    """Show the client's own folders, and where each file went in the package.
+
+    Packaging sorts files into A-E, so one product's photos, specs, and videos
+    end up in different places. This page puts them back side by side.
+    """
+    folders: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        relpath = str(record.get("source_relpath") or record.get("display_name") or record["item_id"])
+        folder = relpath.rsplit("/", 1)[0] if "/" in relpath else ""
+        folders.setdefault(folder, []).append(record)
+
+    rows = ["按原来的文件夹顺序列出每个文件现在在哪、属于哪一类。", ""]
+    for folder in sorted(folders):
+        rows += [f"## {folder or '根目录'}", ""]
+        groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for record in folders[folder]:
+            groups.setdefault((str(record.get("decision")), str(record.get("asset_kind"))), []).append(record)
+        for (_, kind), members in sorted(groups.items()):
+            copied = [m for m in members if m.get("path")]
+            if len(members) >= COLLAPSE_AT and kind in MEDIA_LABELS and copied:
+                target = relative_link(TREE_MAP, copied[0]["path"].rsplit("/", 1)[0])
+                noun = {"image": "张图片", "video": "个视频", "audio": "个音频"}[kind]
+                rows.append(f"- （{len(members)} {noun}）→ {place_label(members[0])} [打开文件夹](<{target}>)")
+                continue
+            for record in sorted(members, key=lambda m: str(m.get("display_name"))):
+                name = str(record.get("display_name") or record["item_id"]).replace("]", ")")
+                status = STATUS_LABELS.get(str(record.get("copy_status")))
+                if record.get("path"):
+                    rows.append(f"- [{name}](<{relative_link(TREE_MAP, record['path'])}>) → {place_label(record)}")
+                elif record.get("copy_status") == "duplicate":
+                    rows.append(f"- {name} → {place_label(record)}，和另一份内容相同，只放了一份")
+                else:
+                    rows.append(f"- {name} → {place_label(record)}，{status or record.get('copy_status')}")
+        rows.append("")
+    keep_list(package, TREE_MAP, "原目录对照", rows, generated)
 
 
 def write_summary(
@@ -526,6 +641,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     inventory = load_json_object(inventory_path)
     inventory_items = {item["item_id"]: item for item in inventory.get("items", [])}
     header, raw_items = load_triage(triage_path)
+    raw_items, problems = expand_triage(header, raw_items, list(inventory_items.values()))
+    if problems:
+        raise BuildError(problems[0])
 
     scope = header.get("scope_confirmation") or {}
     if scope.get("confirmed") is not True:
@@ -580,6 +698,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     write_knowledge_points(package, points, generated)
     review_count = write_client_review(package, records, triage_items, points, args.company, generated)
     write_summary(package, records, points, inventory, review_count, generated)
+    write_tree_map(package, records, generated)
 
     audit = package / AUDIT_DIRECTORY
     audit.mkdir(exist_ok=True)
