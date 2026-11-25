@@ -1250,6 +1250,41 @@ class CertificateAndProductRetentionTests(PackageCase):
         self.assertIn(items["CE证书.pdf"]["item_id"], joined)
         self.assertNotIn(items["往来邮件.eml"]["item_id"], joined)
 
+    def test_website_kit_cases_marked_supplied_for_publication_skip_forced_review(self) -> None:
+        self.add_source("外贸站资料提供/2026企业画册.pptx", "case study content")
+        items = self.inventory()
+        self.decisions(
+            items,
+            {
+                "2026企业画册.pptx": {
+                    "decision": "A",
+                    "resource_type": "marketing",
+                    "summary": "客户提供的外贸建站企业画册",
+                    "supplied_for_publication": True,
+                }
+            },
+        )
+        extract_status = self.root / "extract-status.json"
+        extract_status.write_text(
+            json.dumps(
+                {
+                    "items": {
+                        items["2026企业画册.pptx"]["item_id"]: {
+                            "status": "read_ok",
+                            "case_signal": True,
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        built = self.build()
+        self.assertEqual(built.returncode, 0, built.stderr + built.stdout)
+        verified = self.verify("--extract-status", str(extract_status))
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        self.assertTrue(self.asset("2026企业画册.pptx")["usable_as_fact"])
+        self.assertEqual(read_review_rows(self.package / "客户确认表.xlsx"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

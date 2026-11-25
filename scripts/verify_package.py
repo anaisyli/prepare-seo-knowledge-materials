@@ -150,6 +150,7 @@ def check_rules(
     include_restricted: bool,
     mail_ids: set[str],
     errors: list[str],
+    supplied_for_publication: bool = False,
 ) -> None:
     for asset in assets:
         item_id = str(asset.get("item_id"))
@@ -186,7 +187,11 @@ def check_rules(
             ]
             if not any(EXACT_LOCATOR.search(locator) for locator in locators):
                 errors.append(f"B item has no exact removal location: {item_id}")
-        if decision in {"A", "B"} and status.get("case_signal"):
+        if (
+            decision in {"A", "B"}
+            and status.get("case_signal")
+            and not (supplied_for_publication or item.get("supplied_for_publication") is True)
+        ):
             entries = item.get("client_review_items", [])
             if not item.get("pending_client_review") or not any(
                 CASE_ENTRY.search(str(entry.get("summary"))) for entry in entries
@@ -361,7 +366,15 @@ def verify(
     if extract_status:
         extraction = load_json_object(extract_status).get("items", {})
     mail_ids = {item["item_id"] for item in inventory.get("items", []) if item.get("is_mail")}
-    check_rules(assets, triage_items, extraction, manifest.get("include_restricted") is True, mail_ids, errors)
+    check_rules(
+        assets,
+        triage_items,
+        extraction,
+        manifest.get("include_restricted") is True,
+        mail_ids,
+        errors,
+        supplied_for_publication=header.get("supplied_for_publication") is True,
+    )
 
     points_path = package / "C-知识点" / "knowledge-points.jsonl"
     points = load_jsonl(points_path) if points_path.exists() else []

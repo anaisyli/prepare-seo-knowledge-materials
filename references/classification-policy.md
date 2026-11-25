@@ -37,13 +37,13 @@ Set `pending_client_review: true` when the client must decide whether the conten
 
 The mark covers the whole file by default. When only part of a file waits, such as three cases in a company profile, also set `pending_scope: "part"`. The rest of the file stays usable, and each `client_review_items` entry must give its location, so those parts are held back until the client decides.
 
-Write `client_review_items` for each thing the client must decide, one entry per decision, in words a business owner understands:
+Write `client_review_items` for genuine client decisions only, in words a business owner understands:
 
 ```json
 {"summary": "某北美客户的合作案例", "location": "第 12 页", "question": "这个案例可以写进官网吗？需要隐去客户名称吗？"}
 ```
 
-Use page numbers or section titles the client can find, never codes such as R2, B, or paragraph indexes. A file with three cases gets three entries. A knowledge point awaiting the client uses `client_location` and `client_question` for the same purpose.
+Use page numbers or section titles the client can find, never codes such as R2, B, or paragraph indexes. Keep the review workbook concise: when a single brochure or presentation contains many case pages, group them into **one** `client_review_items` entry (such as `location: "第 15–56 页"`) rather than creating dozens of per-page rows. Likewise, do not duplicate the same question across multiple format exports of the same drawing or logo (e.g. `.dwg` plus its monochrome and color PDFs). Reserve `客户确认表.xlsx` for real decisions: cross-document parameter conflicts, compliance/trademark wording risks, broken or unusable files, and genuinely uncertain publication boundaries. A knowledge point awaiting the client uses `client_location` and `client_question` for the same purpose.
 
 ## R0-R4 content codes
 
@@ -189,10 +189,12 @@ Competitor and third-party material is kept separately with `resource_type: comp
 
 ## Customer cases
 
-Customer cases, testimonials, reviews, and project histories are kept, with `pending_client_review: true`. The client decides during the post-triage review whether each can be used and whether it must be anonymized.
+How customer cases, testimonials, reviews, and project histories are handled depends on how they were supplied:
 
-- Keep the case unit in place in A and B items; do not remove it during triage. A case inside a longer document uses `pending_scope: "part"`, and a file that is all case stays pending as a whole.
-- A knowledge point from a case omits the customer's identity and also sets `pending_client_review: true`.
+- **Internal drives, emails, or unsorted historical archives**: keep them with `pending_client_review: true` so the client decides whether each can be published or must be anonymized.
+- **Client-supplied website or publicity kits** (folders or files explicitly delivered for website/marketing publication, such as `外贸站资料提供` or `官网素材`): these are already selected by the client for external use. Set `supplied_for_publication: true` (on the item, or at the top level of `triage-results.json` when the whole kit is supplied for publication) and keep them as A without generating per-file or per-page confirmation rows, unless a specific risk is spotted (such as conflicting numbers, third-party legal/compliance issues, or visibly private/sensitive details). If a blanket check is still desired, ask at most one grouped question for the whole brochure or folder rather than one row per page or photo.
+- Keep the case unit in place in A and B items; do not remove it during triage. When a document still needs case review on only part of its pages, use `pending_scope: "part"` and group consecutive/similar case pages into one `client_review_items` entry (e.g. `location: "第 15–56 页"`).
+- A knowledge point from a case omits the customer's identity and sets `pending_client_review: true` when publication approval is not yet established.
 - Disputes and complaints remain R3.
 
-Example: if a source states that a named customer received a specific quantity of customized units within a specific period, keep the case for client review. Do not derive a standard capability, MOQ, or lead time from it.
+Example: if an internal email or unsorted archive states that a named customer received a specific quantity of customized units within a specific period, keep the case for client review. Do not derive a standard capability, MOQ, or lead time from it.

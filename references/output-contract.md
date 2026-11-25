@@ -98,7 +98,8 @@ Required on every item: `item_id`, `decision`, `resource_type`, `content_read`, 
 - D items state the failure in `summary` and the need in `required_follow_up`.
 - Set `restricted: true` on items holding finance, contract, or account data that are not typed `finance`.
 - `approval_status: pending` refers only to optional B cleanup.
-- Items awaiting the client add `pending_client_review: true` and `client_review_items`. When only part of the file waits, also add `pending_scope: "part"`; every entry then needs a `location`:
+- Set `supplied_for_publication: true` on an item (or at the top level of `triage-results.json`) when the material was explicitly delivered by the client as a website or publicity kit, so routine public cases inside it do not require per-item client review rows.
+- Items awaiting the client add `pending_client_review: true` and `client_review_items`. Keep entries concise: group many case pages inside one brochure/PPT into a single entry (e.g. `location: "第 15–56 页"`) rather than one row per page. When only part of the file waits, also add `pending_scope: "part"`; every entry then needs a `location`:
 
 ```json
 {
@@ -194,7 +195,7 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 - a file was downgraded to C solely for non-blocking reasons (such as routine editor metadata, qualitative price wording, certificate identifiers/official addresses, or pending scope/wording confirmation) instead of staying A;
 - a B item has no exact location;
 - a folder rule has no checked samples inside its folder, or a video or audio from an email is A without `transcript_read`;
-- customer cases were not sent for client review, or a partial question holds back the whole file;
+- customer cases (unless marked `supplied_for_publication: true`) were not sent for client review, or a partial question holds back the whole file;
 - a knowledge point from one email is marked `general`, contains a price, or does not cite a company message;
 - a knowledge point has no valid source, locator, or scope, or comes from competitor material;
 - anything awaiting the client is missing from `客户确认表.xlsx`, or a row has no summary or question;
