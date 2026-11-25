@@ -60,6 +60,10 @@ Content is R0 only when all conditions are true:
 
 Unclear publication suitability does not fail R0. Keep the content and set `pending_client_review: true`.
 
+Company-owned certificates, licenses, accreditations, and official product documents are R0 originals—they are core assets for website display and E-E-A-T citations. Official company information printed on them (company name, registered or factory address, certificate number, issuing body, seals, and public verification details) is not R2 personal or sensitive data. Qualitative value descriptions such as "lower price" or "cost-saving" without concrete commercial figures are also R0.
+
+Routine Office file-property metadata (such as `creator` or `lastModifiedBy` holding a machine name or internal editor nickname) does not fail R0 and must not downgrade an otherwise clean document to C.
+
 Light technical cleanup such as removing duplicate pages, repeated headers/footers, obvious encoding artifacts, or meaningless formatting does not change R0 meaning.
 
 ### R1 - Abstractable company knowledge
@@ -72,9 +76,9 @@ Competitor material is not R1. Do not extract knowledge points about the company
 
 R2 is a localized unit that must not appear in retained content. It includes:
 
-- names, email addresses, phone numbers, detailed addresses, signatures, account IDs, and contact details;
+- names, email addresses, phone numbers, detailed addresses, signatures, account IDs, and contact details (excluding official company names, registered/factory addresses, certificate numbers, issuing-body seals, and public verification contacts on company certificates or public brochures, and excluding routine Office author/editor file properties);
 - customer or supplier identities and lists;
-- inquiries, quotations, discounts, special pricing, orders, quantities, payment, delivery, shipment, and transaction records;
+- inquiries, quotations, discounts, special pricing, orders, quantities, payment, delivery, shipment, and transaction records (concrete commercial figures or terms, not qualitative selling points such as "lower price" or "cost-saving");
 - specifications made only for one customer's project, and project dates, geography, drawings, solutions, promises, and communication context;
 - competitor passages inside company material; whole competitor documents are kept under Competitor information;
 - any combination of otherwise ordinary details that can re-identify a party or event.
@@ -109,6 +113,8 @@ Use this roll-up mapping:
 
 Every substantive unit passes R0, or the item is competitor material. The build script copies the source byte-for-byte. Do not summarize it.
 
+Keep company-owned certificates, licenses, accreditations, and official product description documents as A so the originals remain importable for website pages and article citations. When certificate scope, trademark mapping, validity, public wording, or a few local product parameters need confirmation, keep the item as A and set `pending_client_review: true` (with `pending_scope: "part"` when only part of the document awaits confirmation) instead of downgrading it to C.
+
 ### B - Retention after local removal
 
 The item contains R0 plus removable R2/R3 units. Use B only when:
@@ -126,6 +132,8 @@ Spreadsheets qualify, and quotation sheets are product material with prices atta
 ### C - Formal knowledge-point extraction
 
 The original item cannot be retained, but at least one company-owned R1 unit can produce one or more useful, non-sensitive knowledge points. The source is copied to `C-知识点/来源文件/` for traceability only and is never imported. The knowledge point is created during triage, is formal, importable, and usable as enterprise knowledge without another review. Competitor material produces no extracted content.
+
+Use C only when the original file genuinely cannot be retained (such as customer/supplier emails, chat exports, or mixed documents with inseparable sensitive or transactional context). Do not downgrade clean official product documents or company certificates to C merely because of routine editor metadata, qualitative cost wording, official certificate numbers/addresses, or pending client wording confirmation.
 
 ### D - Cannot process reliably
 

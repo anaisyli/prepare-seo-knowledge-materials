@@ -191,6 +191,7 @@ Write one JSON object per line for `--knowledge-points`. Do not include an origi
 - an A, B, C, or E item was not read, or an E item has no real reason;
 - an email was excluded without `mail_review`;
 - a quotation with product content was excluded as pricing or hidden as finance, a finance-named file was kept as A or B, or a non-finance item is restricted;
+- a file was downgraded to C solely for non-blocking reasons (such as routine editor metadata, qualitative price wording, certificate identifiers/official addresses, or pending scope/wording confirmation) instead of staying A;
 - a B item has no exact location;
 - a folder rule has no checked samples inside its folder, or a video or audio from an email is A without `transcript_read`;
 - customer cases were not sent for client review, or a partial question holds back the whole file;

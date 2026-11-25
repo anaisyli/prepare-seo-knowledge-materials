@@ -1175,5 +1175,81 @@ class ExtractionTests(PackageCase):
         self.assertIn("220GSM fleece", texts)
 
 
+class CertificateAndProductRetentionTests(PackageCase):
+    def test_certificate_and_product_doc_kept_as_a_with_client_review_verify(self) -> None:
+        self.add_source("资质/ISO27001证书.pdf", "cert")
+        self.add_source("产品/升降横移.docx", "spec")
+        items = self.inventory()
+        self.decisions(
+            items,
+            {
+                "ISO27001证书.pdf": {
+                    "decision": "A",
+                    "resource_type": "product",
+                    "summary": "ISO/IEC 27001 信息安全管理体系证书原件",
+                    "pending_client_review": True,
+                    "client_review_items": [
+                        {
+                            "summary": "ISO/IEC 27001 证书官网展示范围",
+                            "location": "整份文件",
+                            "question": "请确认官网可展示的认证范围和现行有效状态。",
+                        }
+                    ],
+                },
+                "升降横移.docx": {
+                    "decision": "A",
+                    "resource_type": "product",
+                    "summary": "升降横移式停车设备产品介绍与参数",
+                },
+            },
+        )
+        self.assert_built_and_verified()
+        self.assertEqual(self.asset("ISO27001证书.pdf")["path"], "A-原文保留/产品资料/资质/ISO27001证书.pdf")
+        self.assertTrue(self.asset("ISO27001证书.pdf")["importable"])
+        self.assertEqual(self.asset("升降横移.docx")["path"], "A-原文保留/产品资料/产品/升降横移.docx")
+        self.assertTrue(self.asset("升降横移.docx")["importable"])
+
+    def test_verifier_rejects_downgrading_to_c_for_non_blocking_reasons_only(self) -> None:
+        self.add_source("产品/升降横移.docx", "spec")
+        self.add_source("资质/CE证书.pdf", "cert")
+        self.add_source("邮件/往来邮件.eml", "mail")
+        items = self.inventory()
+        self.decisions(
+            items,
+            {
+                "升降横移.docx": {
+                    "decision": "C",
+                    "resource_type": "product",
+                    "reason_codes": ["personal_editor_metadata", "price_language_omitted"],
+                    "summary": "产品说明",
+                },
+                "CE证书.pdf": {
+                    "decision": "C",
+                    "resource_type": "product",
+                    "reason_codes": [
+                        "document_identifiers_and_contact_details_omitted",
+                        "certification_scope_pending",
+                    ],
+                    "summary": "CE 证书",
+                },
+                "往来邮件.eml": {
+                    "decision": "C",
+                    "resource_type": "business_scenario",
+                    "reason_codes": ["customer_email_context"],
+                    "summary": "含客户往来信息的邮件",
+                },
+            },
+        )
+        built = self.build()
+        self.assertEqual(built.returncode, 0, built.stderr + built.stdout)
+        verified = self.verify()
+        self.assertNotEqual(verified.returncode, 0)
+        report = json.loads(verified.stdout)
+        joined = "\n".join(report["errors"])
+        self.assertIn(items["升降横移.docx"]["item_id"], joined)
+        self.assertIn(items["CE证书.pdf"]["item_id"], joined)
+        self.assertNotIn(items["往来邮件.eml"]["item_id"], joined)
+
+
 if __name__ == "__main__":
     unittest.main()

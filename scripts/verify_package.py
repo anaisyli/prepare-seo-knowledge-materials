@@ -35,6 +35,12 @@ FINANCE_NAME = re.compile(r"(?i)收汇|发票|invoice|合同|contract|工资|银
 EXACT_LOCATOR = re.compile(r"(?i)\b[A-Z]{1,3}\d*:[A-Z]{1,3}\d*\b|\b[A-Z]{1,3}\d+\b|第\s*\d|page\s*\d|slide\s*\d|para\s*\d|paragraph\s*\d")
 PRICE_VALUE = re.compile(r"(?i)[$￥¥€]\s?\d|\d\s?(美元|美金|元)|\d\s?(usd|rmb|cny|eur)\b|\b(usd|rmb|cny)\s?\d")
 CASE_ENTRY = re.compile(r"(?i)案例|case|客户|testimonial")
+NON_BLOCKING_C_REASON = re.compile(
+    r"(?i)^(personal_editor_metadata|editor_metadata|author_metadata|document_properties|"
+    r"price_language_omitted|qualitative_price_language|inconsistent_specs_omitted|"
+    r"document_identifiers_and_contact_details_omitted|document_identifiers|"
+    r"certification_scope_pending|pending_client_review)$"
+)
 LOCAL_PATH_PATTERN = re.compile(r"file:///|(?<![A-Za-z0-9])[A-Za-z]:[\\/]")
 UNREADABLE_STATES = {"failed", "needs_ocr", "needs_pdf_reader", "unsupported"}
 COPIED_STATES = {"copied"}
@@ -210,6 +216,12 @@ def check_rules(
             errors.append(f"Email excluded without reviewing its content: {item_id}")
         if decision == "E" and not [c for c in item.get("reason_codes", []) if c not in {"E", ""}]:
             errors.append(f"E item has no real reason code: {item_id}")
+        if decision == "C":
+            reasons = [str(c).strip() for c in item.get("reason_codes", []) if str(c).strip()]
+            if reasons and all(NON_BLOCKING_C_REASON.match(code) for code in reasons):
+                errors.append(
+                    f"Downgraded to C without a real retention blocker (keep as A, with pending_client_review if needed): {item_id}"
+                )
         if (
             decision == "A"
             and asset.get("asset_kind") in {"video", "audio"}

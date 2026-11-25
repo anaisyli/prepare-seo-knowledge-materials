@@ -37,8 +37,8 @@ Website kits, brand folders, and product folders are usually sorted by the compa
 
 - Preserve paragraph, heading, table, header, footer, comment, and note boundaries when readable.
 - For B, delete only explicit paragraphs, heading sections, table rows, or other structurally reliable units from a work copy.
-- Check headers, footers, comments, tracked changes, document properties, embedded objects, and relationship targets for prohibited data when the chosen tool exposes them.
-- Do not mark a DOCX as clean when hidden revisions or metadata have not been checked.
+- Check headers, footers, comments, tracked changes, embedded objects, and relationship targets for prohibited data (such as customer names, prices, internal discussions, or private contact details) when the chosen tool exposes them.
+- Do not mark a DOCX as clean when hidden revisions or comments containing prohibited content have not been checked. Routine document properties (`core.xml` `creator` / `lastModifiedBy` with a machine name or internal editor nickname) alone are not R2 and must not downgrade a clean product document from A to C.
 - Treat legacy DOC as read/convert only when a reliable local converter is available. Convert to a temporary working representation; never replace the source.
 
 ## PDF
